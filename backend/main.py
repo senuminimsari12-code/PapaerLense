@@ -1,0 +1,510 @@
+"""The PaperLense web API. Start it from the repository root with:
+
+    uvicorn backend.main:app
+
+This file is the front door. Every request from the browser arrives here, and this is
+the best place to start reading the project.
+
+There are four endpoints:
+  GET  /api/health                         - is the server alive?
+  POST /api/upload                         - send a PDF, get a document_id back.
+  POST /api/documents/{id}/summary         - generate the five-section summary.
+  POST /api/documents/{id}/chat            - ask a question about the PDF.
+
+The work itself lives in other files, so each endpoint here reads as a short list of
+steps:
+  backend/pdf_processing.py  - validate the PDF and pull out its text.
+  backend/retrieval.py       - find the passages relevant to a question.
+  backend/summarization.py   - build and check the five-section summary.
+  backend/chat.py            - build and check a grounded answer with citations.
+  backend/ai_providers.py    - call Gemini, then Groq, then OpenRouter.
+"""
+
+import logging
+from pathlib import Path
+from uuid import uuid4
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
+from starlette.responses import JSONResponse
+
+from backend.ai_errors import ProviderError
+from backend.chat import (
+    ChatRequest, ChatResponse, INSUFFICIENT_ANSWER, chat_cache_key,
+    follow_up_context, generate_answer, remember_answer,
+)
+from backend.pdf_processing import MAX_UPLOAD_BYTES, PDFError, extract_pdf
+from backend.retrieval import build_index, retrieve_chunks
+from backend.summarization import SummaryError, SummaryResponse, generate_summary
+
+# Load API keys from the .env file at the repository root. override=False means a real
+# environment variable always wins over the file, which is what you want in production.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="PaperLense",
+    version="3.0.0",
+    description="PDF extraction, structured summaries and grounded paper Q&A.",
+)
+
+# Where the uploaded document lives: one plain dictionary, in memory.
+#
+# This holds AT MOST ONE document. A successful upload clears it and stores the new one,
+# which is why uploading a second PDF makes the first one's ID stop working.
+#
+# This is deliberate for a local single-user prototype. It also means there is no
+# database, nothing is written to disk, and everything is forgotten when the server
+# stops. A real multi-user app would need a database and per-user access checks.
+#
+# Each stored value is a dict holding: document_id, filename, page_count,
+# character_count, pages, preview, and later the cached summary, retrieval_index and
+# chat_cache.
+documents: dict[str, dict] = {}
+
+# Extra room above the file limit for multipart form overhead (field names, boundary
+# markers). Without it, a file at exactly the limit could be rejected for being a few
+# hundred bytes too large once wrapped in a form.
+MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024
+
+# How much we read from the network at a time while receiving an upload.
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+
+class UploadResponse(BaseModel):
+    """What the frontend receives after a successful upload."""
+
+    document_id: str
+    filename: str
+    page_count: int
+    character_count: int
+    preview: str
+
+
+class UploadBodyLimit:
+    """Stop an oversized upload while it is still arriving.
+
+    This is ASGI middleware, which is a lower level than a normal FastAPI route. It is
+    worth the extra complexity for one reason: FastAPI only hands us the file after the
+    multipart parser has already read the whole request and written big uploads to a
+    temporary file. By then a 2 GB upload has already cost us 2 GB of disk.
+
+    So this class sits in front of the parser and counts the bytes as they arrive. The
+    moment the total goes over the limit, it raises, and the rest is never read.
+
+    How ASGI works, in short: an application is a function taking three arguments.
+      scope   - a dict describing the request (its type, path, headers).
+      receive - an async function you call to get the next piece of the request body.
+      send    - an async function you call to send part of the response.
+    Middleware wraps one of those three and passes the rest through unchanged. Here we
+    wrap `receive`, because the request body is what we want to measure.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        # Only guard the upload endpoint. Everything else passes straight through.
+        if scope["type"] != "http" or scope["path"] != "/api/upload":
+            await self.app(scope, receive, send)
+            return
+
+        bytes_received = 0
+
+        async def receive_and_count():
+            """Stand in for `receive`, adding up the body size as it streams in."""
+            nonlocal bytes_received
+            message = await receive()
+            bytes_received += len(message.get("body", b""))
+
+            if bytes_received > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_ALLOWANCE:
+                raise HTTPException(413, "This upload exceeds the 20 MB (20 MiB) limit.")
+
+            return message
+
+        await self.app(scope, receive_and_count, send)
+
+
+class ContainUnexpectedErrors:
+    """Turn any unexpected crash into a plain 500, revealing nothing private.
+
+    Why not use FastAPI's exception handler instead? Because a handler runs after the
+    request body has been buffered, which would undo the streaming protection in
+    UploadBodyLimit above. This middleware wraps `send` only, so uploads still stream.
+
+    The security point: a Python error message or traceback can easily contain an API
+    key, a file path, or a sentence from the user's paper. So we log only the exception's
+    TYPE (for example "KeyError") and send the user a fixed, generic sentence.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def send_and_remember(message):
+            """Stand in for `send`, noting whether the response has begun."""
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_and_remember)
+        except Exception as error:
+            # Deliberately logs the type only, never str(error).
+            logger.error("Unexpected server failure (%s).", type(error).__name__)
+
+            if response_started:
+                # Headers are already on the wire, so we cannot send a second response.
+                # Raise a message with nothing private in it and let the server close
+                # the connection.
+                raise RuntimeError("The response could not be completed.") from None
+
+            error_response = JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "Something went wrong while processing this request. "
+                              "Please try again."
+                },
+            )
+            await error_response(scope, receive, send)
+
+
+# Middleware order matters, and reads backwards: the LAST one added is the OUTERMOST,
+# so it sees the request first. The effective order for an upload is therefore:
+#   CORS  ->  UploadBodyLimit  ->  ContainUnexpectedErrors  ->  the endpoint.
+app.add_middleware(ContainUnexpectedErrors)
+app.add_middleware(UploadBodyLimit)
+app.add_middleware(
+    # Browsers block cross-origin requests unless the server allows them. Only the two
+    # local Vite addresses are allowed: 5173 for `npm run dev`, 4173 for `npm run preview`.
+    # Any other website's JavaScript is refused by the browser.
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+
+@app.get("/api/health")
+def health():
+    """Report that the server is running. Used to check the backend is reachable."""
+    return {"status": "ok"}
+
+
+async def read_limited_file(file: UploadFile) -> bytes:
+    """Read an uploaded file into memory, stopping just past the size limit.
+
+    We read one chunk at a time and stop as soon as we are over the limit, so a huge
+    file never fully loads. The "+ 1" in the size calculation is what lets us notice a
+    file that is exactly one byte too big instead of silently accepting it.
+
+    Raises HTTPException(413) if the file is too large.
+    """
+    data = bytearray()
+
+    while True:
+        bytes_still_allowed = MAX_UPLOAD_BYTES + 1 - len(data)
+        chunk = await file.read(min(UPLOAD_READ_CHUNK_BYTES, bytes_still_allowed))
+
+        # An empty chunk means the file has been read completely.
+        if not chunk:
+            break
+
+        data.extend(chunk)
+
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "This file exceeds the 20 MB (20 MiB) upload limit.")
+
+    return bytes(data)
+
+
+def strip_directories_from_filename(filename: str | None) -> str:
+    """Keep only the file's own name, discarding any folder path the browser sent.
+
+    Some browsers send "C:\\Users\\me\\paper.pdf". We keep just "paper.pdf" so the name
+    cannot describe a location on disk. PaperLense never uses this name to open a file,
+    but it is displayed back to the user, so it is cleaned anyway.
+    """
+    if not filename:
+        return "document.pdf"
+
+    # Treat Windows "\" and POSIX "/" the same, then take the final piece.
+    return filename.replace("\\", "/").split("/")[-1]
+
+
+@app.post(
+    "/api/upload",
+    response_model=UploadResponse,
+    status_code=201,
+    # Describes the multipart upload in the generated API docs at /docs. It is written
+    # by hand because this endpoint reads the form itself rather than declaring a
+    # File() parameter, so FastAPI cannot work out the shape on its own.
+    openapi_extra={"requestBody": {"required": True, "content": {"multipart/form-data": {
+        "schema": {"type": "object", "required": ["file"], "properties": {
+            "file": {"type": "string", "format": "binary"}
+        }}
+    }}}},
+)
+async def upload_pdf(request: Request):
+    """Accept one PDF, extract its text, and register it as the current document.
+
+    The steps, in order:
+      1. Check the request really is a file upload.
+      2. Take exactly one file out of the form.
+      3. Read it, refusing anything over the size limit.
+      4. Extract the text (this is where an invalid PDF is rejected).
+      5. Replace any previous document and store this one under a new ID.
+    """
+    # Step 1: reject anything that is not a file upload, such as a JSON body.
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "multipart/form-data":
+        raise HTTPException(415, "Send one PDF as multipart/form-data using the 'file' field.")
+
+    # Using `async with` on the form matters: when the block ends, Starlette closes the
+    # upload and deletes any temporary file it created, including when an error is
+    # raised. That is how PaperLense avoids leaving PDFs behind on disk.
+    async with request.form(max_files=1, max_fields=0) as form:
+        # Step 2: there must be exactly one item, named "file", and it must be a file
+        # rather than a text field.
+        submitted_items = list(form.multi_items())
+        if len(submitted_items) != 1:
+            raise HTTPException(400, "Upload exactly one PDF using the 'file' field.")
+
+        field_name, uploaded_file = submitted_items[0]
+        if field_name != "file" or not isinstance(uploaded_file, UploadFile):
+            raise HTTPException(400, "Upload exactly one PDF using the 'file' field.")
+
+        filename = strip_directories_from_filename(uploaded_file.filename)
+
+        # Step 3: read the bytes, bounded by the size limit.
+        pdf_bytes = await read_limited_file(uploaded_file)
+
+        # Step 4: extract the text.
+        try:
+            # PyMuPDF is normal blocking code, and parsing a large PDF takes a while.
+            # run_in_threadpool moves it to a worker thread so the server can still
+            # answer other requests (such as /api/health) while this one is parsing.
+            extracted = await run_in_threadpool(extract_pdf, pdf_bytes)
+        except PDFError as error:
+            # PDFError messages are written for users, so they are safe to pass on.
+            # The log records sizes only, never the filename or any paper text.
+            logger.info(
+                "PDF upload rejected (bytes=%d, status=%d).", len(pdf_bytes), error.status_code
+            )
+            raise HTTPException(error.status_code, str(error)) from error
+        finally:
+            # Release the PDF bytes promptly; they can be up to 20 MB.
+            del pdf_bytes
+
+    # Step 5: register the document. Only now, after extraction succeeded, do we clear
+    # the previous one. A rejected upload therefore leaves the old document working.
+    document_id = str(uuid4())
+    document = {"document_id": document_id, "filename": filename, **extracted}
+
+    documents.clear()
+    documents[document_id] = document
+
+    readable_pages = 0
+    for page in document["pages"]:
+        if page["text"]:
+            readable_pages += 1
+
+    logger.info(
+        "PDF extracted (document_id=%s, pages=%d, readable_pages=%d, characters=%d).",
+        document_id, document["page_count"], readable_pages, document["character_count"],
+    )
+
+    return UploadResponse(
+        document_id=document["document_id"],
+        filename=document["filename"],
+        page_count=document["page_count"],
+        character_count=document["character_count"],
+        preview=document["preview"],
+    )
+
+
+def get_current_document(document_id: str) -> dict:
+    """Look up a document by ID, or raise 404 if it is not the current one.
+
+    Because only one document is stored at a time, an ID stops working as soon as a new
+    PDF is uploaded. The message says so plainly rather than implying a server fault.
+    """
+    document = documents.get(document_id)
+    if document is None:
+        raise HTTPException(404, "This document is no longer available. Upload the PDF again.")
+    return document
+
+
+def raise_if_document_was_replaced(document_id: str, document: dict, message: str) -> None:
+    """Abort if the user uploaded a new PDF while this request was still running.
+
+    This is the "stale request" protection. Summaries and answers take many seconds, and
+    the user may upload a different paper in the meantime. We compare object identity
+    (`is not`) to confirm the stored document is still the exact same one we started
+    with, so we never show the new paper an answer built from the old one.
+    """
+    if documents.get(document_id) is not document:
+        raise HTTPException(404, message)
+
+
+@app.post("/api/documents/{document_id}/summary", response_model=SummaryResponse)
+async def summarize_document(document_id: str):
+    """Generate the five-section summary for a document, or return the cached one.
+
+    The steps, in order:
+      1. Find the document.
+      2. Return the saved summary if we already have one (no new provider call).
+      3. Refuse if a summary is already being generated (no duplicate provider call).
+      4. Ask the AI providers, in order, until one returns a valid five-section summary.
+      5. Check the document was not replaced while we waited, then cache and return it.
+    """
+    document = get_current_document(document_id)
+
+    # Step 2: a repeat click costs nothing and cannot produce a different summary.
+    if document.get("summary") is not None:
+        return document["summary"]
+
+    # Step 3: two requests at once would pay twice for the same summary.
+    if document.get("summary_in_progress"):
+        raise HTTPException(
+            409, "A summary is already being generated for this document. Please wait."
+        )
+
+    document["summary_in_progress"] = True
+    try:
+        # Step 4: this is where Gemini, then Groq, then OpenRouter are tried.
+        summary_content, model = await generate_summary(document["pages"])
+
+        # Step 5: the user may have uploaded a replacement while we were waiting.
+        raise_if_document_was_replaced(
+            document_id, document,
+            "This document was replaced while generating its summary. Use the current PDF.",
+        )
+
+        summary_response = SummaryResponse(
+            document_id=document_id,
+            summary=summary_content,
+            model=model,
+            source_page_count=document["page_count"],
+            source_character_count=document["character_count"],
+        )
+
+        document["summary"] = summary_response
+        return summary_response
+
+    except SummaryError as error:
+        # `from None` hides the original exception chain, which can contain provider
+        # text. The message itself is one we wrote, so it is safe to show.
+        raise HTTPException(error.status_code, str(error)) from None
+    finally:
+        # Always clear the flag, including on failure, so the user can retry.
+        document["summary_in_progress"] = False
+
+
+@app.post("/api/documents/{document_id}/chat", response_model=ChatResponse)
+async def chat_with_document(document_id: str, request: ChatRequest):
+    """Answer one question about a document, using passages retrieved from it.
+
+    The steps, in order:
+      1. Find the document.
+      2. Work out whether this is a follow-up question needing earlier context.
+      3. Return a cached answer if this exact question was already asked.
+      4. Refuse if an answer is already being prepared.
+      5. Build the search index once, then retrieve the relevant passages.
+      6. With no relevant passages, answer honestly without calling any AI provider.
+      7. Otherwise ask the providers and validate the citations.
+      8. Cache the result and return it.
+    """
+    document = get_current_document(document_id)
+    question = request.question
+
+    # Step 2: "How many heads does it use?" needs the previous question to make sense.
+    context_question = follow_up_context(question, document.get("chat_topic"))
+
+    # Step 3: an identical question returns the saved answer, free and instant.
+    cache_key = chat_cache_key(question, context_question)
+    cached_answer = document.get("chat_cache", {}).get(cache_key)
+    if cached_answer is not None:
+        # A fresh (non-follow-up) question still becomes the current topic, so later
+        # follow-ups refer to it even when this answer came from the cache.
+        if context_question is None:
+            document["chat_topic"] = question
+        return cached_answer
+
+    # Step 4: one question at a time per document.
+    if document.get("chat_in_progress"):
+        raise HTTPException(
+            409, "An answer is already being prepared for this document. Please wait."
+        )
+
+    document["chat_in_progress"] = True
+    try:
+        # Step 5: build the index once per document and reuse it for later questions.
+        if "retrieval_index" not in document:
+            retrieval_index = await run_in_threadpool(build_index, document["pages"])
+            raise_if_document_was_replaced(
+                document_id, document, "This document was replaced. Use the current PDF."
+            )
+            document["retrieval_index"] = retrieval_index
+
+        # For a follow-up, search using both questions so terms from the earlier topic
+        # help find the right passages.
+        if context_question is None:
+            search_text = question
+        else:
+            search_text = question + "\n" + context_question
+
+        passages = await run_in_threadpool(
+            retrieve_chunks, document["retrieval_index"], search_text
+        )
+        raise_if_document_was_replaced(
+            document_id, document, "This document was replaced. Use the current PDF."
+        )
+
+        if not passages:
+            # Step 6: nothing relevant was found, so say so. No AI provider is called,
+            # which means no quota is spent guessing at an unanswerable question.
+            answer_response = ChatResponse(
+                document_id=document_id,
+                answer=INSUFFICIENT_ANSWER,
+                sources=[],
+                insufficient_evidence=True,
+                model=None,
+                context_question=context_question,
+            )
+        else:
+            # Step 7: ask the providers; citations are validated inside generate_answer.
+            answer, sources, model = await generate_answer(question, passages, context_question)
+            raise_if_document_was_replaced(
+                document_id, document,
+                "This document was replaced while preparing the answer. Use the current PDF.",
+            )
+            answer_response = ChatResponse(
+                document_id=document_id,
+                answer=answer.answer,
+                sources=sources,
+                insufficient_evidence=answer.insufficient_evidence,
+                model=model,
+                context_question=context_question,
+            )
+
+        # Step 8: remember the answer and the current topic.
+        remember_answer(document, cache_key, answer_response, question, context_question)
+        return answer_response
+
+    except ProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    finally:
+        document["chat_in_progress"] = False

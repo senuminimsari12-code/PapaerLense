@@ -1,0 +1,1385 @@
+/* ==========================================================================
+   PaperLense stylesheet
+
+   How this file is organised, top to bottom:
+     1. Design tokens      - the colours and sizes everything else refers to.
+     2. Base elements      - defaults for plain tags (body, button, a, h1...).
+     3. Layout and header  - the page shell, header and intro.
+     4. Shared styles      - cards, buttons, status and error messages.
+     5. The four panels    - upload, preview, summary, chat, in screen order.
+     6. Responsive rules   - all the @media blocks, collected at the end.
+
+   Each section below starts with a banner comment, so you can scroll to the
+   part you need instead of reading the whole file.
+
+   Class names follow the JSX: .upload-card styles the component in
+   UploadCard.jsx, .chat-form styles the form in ChatPanel.jsx, and so on.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. DESIGN TOKENS
+
+   The custom properties (the --name values) are the project's design system.
+   Every colour used below refers to one of these rather than repeating a hex
+   code, so changing --accent here recolours buttons, links, focus outlines and
+   highlights everywhere at once.
+
+     --ink          main text colour
+     --muted        secondary text: captions, hints, metadata
+     --accent       the PaperLense purple: buttons, links, focus rings
+     --accent-dark  the darker purple used for hover states
+     --lavender     the pale purple used for tinted panel backgrounds
+     --border       the standard divider and outline colour
+     --success      green, for "extraction worked" confirmations
+     --radius       the standard corner rounding, so panels match
+
+   The non-variable properties here set the page's default font and colours,
+   which every element then inherits.
+   ========================================================================== */
+:root {
+  font-family:
+    "Segoe UI",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  color: #232b43;
+  background: #f9f9fc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #232b43;
+  --muted: #74788b;
+  --accent: #7560b5;
+  --accent-dark: #5e469b;
+  --lavender: #f2eef9;
+  --border: #e8e7ef;
+  --success: #347664;
+  --radius: 18px;
+}
+/* ========================================================================
+   BASE ELEMENT DEFAULTS
+   Resets and defaults applied to plain HTML tags, before any component styles.
+   ======================================================================== */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button,
+a,
+input,
+pre {
+  outline-offset: 5px;
+}
+:focus-visible {
+  outline: 3px solid var(--accent);
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+/* ========================================================================
+   PAGE SHELL AND LAYOUT
+   ======================================================================== */
+.app-shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 64px;
+}
+/* ========================================================================
+   SITE HEADER: logo, nav link, phase badge
+   ======================================================================== */
+.site-header {
+  height: 98px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.9px;
+}
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--lavender);
+  border-radius: 12px;
+}
+.brand-light {
+  font-weight: 400;
+}
+.brand-dot {
+  color: var(--accent);
+}
+.header-right {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+}
+.header-right > a {
+  font-size: 13px;
+  color: #656b7d;
+}
+.header-right > a:hover {
+  color: var(--accent-dark);
+}
+.header-right > a span {
+  padding-left: 5px;
+}
+.phase-badge {
+  font-size: 10px;
+  letter-spacing: 1.1px;
+  font-weight: 650;
+  background: #efebf6;
+  color: var(--accent-dark);
+  padding: 8px 11px;
+  border: 1px solid #e7e0f2;
+  border-radius: 6px;
+}
+.phase-badge span {
+  font-size: 11px;
+  letter-spacing: 0;
+  font-weight: 400;
+  padding-left: 9px;
+  margin-left: 7px;
+  border-left: 1px solid #d7cde7;
+}
+main {
+  max-width: 1136px;
+  margin: 0 auto;
+}
+/* ========================================================================
+   INTRO / HERO: the headline and the local-processing note
+   ======================================================================== */
+.intro {
+  padding: 58px 0 39px;
+}
+.eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.9px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.tiny-line {
+  width: 20px;
+  height: 1px;
+  background: #9e8bc2;
+}
+h1 {
+  font-size: clamp(38px, 4.2vw, 57px);
+  font-weight: 550;
+  letter-spacing: -2.4px;
+  line-height: 1.22;
+  margin: 14px 0 15px;
+}
+h1 > span {
+  color: var(--accent);
+}
+.intro-copy {
+  font-size: 15px;
+  color: #6a7083;
+  line-height: 1.8;
+}
+.local-note {
+  margin-top: 20px;
+  color: #6e7183;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+.local-note svg {
+  color: #8a7aa8;
+}
+.local-note > span {
+  padding: 0 2px;
+}
+.mobile-break {
+  display: none;
+}
+/* ========================================================================
+   SHARED CARD STYLES
+   The upload, preview, summary and chat panels are all .card, so these rules
+   set the look every panel shares. Panel-specific rules come further down.
+   ======================================================================== */
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 24px;
+  align-items: stretch;
+}
+.card {
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 20px #28203c03;
+  overflow: hidden;
+}
+.upload-card {
+  padding: 26px;
+}
+.card-eyebrow {
+  color: #716c7e;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 21px;
+  margin-bottom: 10px;
+}
+.file-type {
+  color: #716c7e;
+  font-size: 9px;
+  background: #f6f3fa;
+  padding: 4px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+h2 {
+  font-size: 21px;
+  letter-spacing: -0.6px;
+  font-weight: 600;
+}
+.card-description {
+  color: #716c7e;
+  font-size: 12px;
+  margin-top: 7px;
+}
+/* ========================================================================
+   01 - UPLOAD CARD: drop zone and chosen-file details
+   ======================================================================== */
+.drop-zone {
+  border: 1.5px dashed #d8cce9;
+  background: #fcfaff;
+  border-radius: 12px;
+  text-align: center;
+  margin-top: 24px;
+  padding: 29px 12px 21px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.drop-zone.dragging {
+  background: #ede5fb;
+  border-color: var(--accent);
+}
+.upload-symbol {
+  display: grid;
+  place-items: center;
+  height: 62px;
+  width: 62px;
+  background: #f0eaf8;
+  color: var(--accent);
+  border-radius: 18px;
+  margin: 0 auto 18px;
+  box-shadow: 0 0 0 7px #f7f3fc;
+}
+.drop-zone h3 {
+  font-weight: 550;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+}
+.drop-zone > p {
+  font-size: 12px;
+  color: #716c7e;
+  margin: 8px 0 21px;
+}
+/* ========================================================================
+   SHARED BUTTONS
+   Used by every panel. .button is the base; .button-primary and .button-secondary
+   only change the colours.
+   ======================================================================== */
+.button {
+  padding: 12px 20px;
+  font-size: 12px;
+  font-weight: 550;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 19px;
+  border: 1px solid transparent;
+  min-height: 42px;
+}
+.button-primary {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 2px 4px #6c50951a;
+}
+.button-primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+.button-secondary {
+  background: white;
+  color: var(--accent-dark);
+  border-color: #d8cce9;
+}
+.button-secondary:hover {
+  background: var(--lavender);
+}
+/* ========================================================================
+   01 - UPLOAD CARD (continued)
+   ======================================================================== */
+.upload-limit {
+  display: block;
+  margin-top: 15px;
+  font-size: 10px;
+  color: #716c7e;
+}
+.upload-limit > span {
+  padding: 0 6px;
+}
+.privacy-note {
+  margin-top: 20px;
+  display: flex;
+  gap: 8px;
+  color: #716c7e;
+  font-size: 10px;
+  line-height: 1.65;
+  align-items: flex-start;
+}
+.privacy-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.selected-file {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px;
+  margin-top: 14px;
+  min-width: 0;
+}
+.file-icon {
+  color: var(--accent);
+  display: flex;
+  flex-shrink: 0;
+}
+.selected-file > div {
+  min-width: 0;
+  flex: 1;
+}
+.selected-file p {
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.selected-file span:not(.file-icon) {
+  font-size: 10px;
+  color: var(--muted);
+}
+.success-icon {
+  color: var(--success);
+  flex-shrink: 0;
+}
+.success-message,
+.processing-message {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--success);
+  margin-top: 12px;
+}
+.processing-message {
+  color: var(--accent);
+}
+/* ========================================================================
+   SHARED STATUS AND ERROR MESSAGES
+   Used by the upload card, the summary card and the chat panel.
+   ======================================================================== */
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: #fff5f3;
+  border: 1px solid #f1d7d1;
+  border-radius: 9px;
+  padding: 13px;
+  margin-top: 14px;
+  color: #a04939;
+}
+.error-message > svg {
+  flex-shrink: 0;
+}
+.error-message strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.error-message p {
+  font-size: 12px;
+  line-height: 1.65;
+  margin-top: 4px;
+}
+/* ========================================================================
+   02 - DOCUMENT PREVIEW: page stats and extracted text
+   ======================================================================== */
+.preview-card {
+  display: flex;
+  flex-direction: column;
+}
+.preview-heading {
+  padding: 26px 26px 22px;
+  border-bottom: 1px solid #f0eef4;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+.preview-heading .card-eyebrow {
+  margin-bottom: 10px;
+}
+.preview-badge {
+  font-size: 9px;
+  white-space: nowrap;
+  color: #716c7e;
+  background: #f6f5f8;
+  border: 1px solid #eceaf0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin-bottom: 2px;
+}
+.preview-badge.ready {
+  color: var(--success);
+  background: #f0f7f3;
+  border-color: #dcebe3;
+}
+.preview-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  padding: 30px 34px 26px;
+  min-height: 337px;
+}
+/* ========================================================================
+   02 - the decorative paper drawing shown before an upload
+   Purely decorative, and marked aria-hidden in the JSX. Safe to skip on a first read.
+   ======================================================================== */
+.paper-illustration {
+  width: 125px;
+  height: 140px;
+  position: relative;
+  margin-bottom: 23px;
+}
+.paper-back {
+  position: absolute;
+  width: 89px;
+  height: 111px;
+  top: 15px;
+  left: 11px;
+  border: 1px solid #e5dfed;
+  border-radius: 7px;
+  transform: rotate(-11deg);
+  background: #f5f2fa;
+}
+.paper-front {
+  position: absolute;
+  width: 100px;
+  height: 126px;
+  left: 20px;
+  top: 0;
+  border: 1px solid #e3ddeb;
+  border-radius: 7px;
+  transform: rotate(6deg);
+  background: white;
+  padding: 17px 12px;
+  box-shadow: 0 8px 16px #55427308;
+}
+.paper-mini-label {
+  font-size: 5px;
+  letter-spacing: 1px;
+  color: #a894bf;
+  display: block;
+  margin-bottom: 10px;
+  text-align: left;
+}
+.paper-rule {
+  height: 3px;
+  background: #eeebf3;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+.paper-rule.wide {
+  background: #d9cfe7;
+  width: 90%;
+  height: 4px;
+}
+.paper-rule.medium {
+  background: #dfd7eb;
+  width: 60%;
+  height: 4px;
+}
+.paper-rule.short {
+  width: 67%;
+}
+.paper-separator {
+  height: 8px;
+}
+.paper-lens {
+  position: absolute;
+  right: -18px;
+  bottom: 6px;
+  background: #f0eaf8;
+  color: #9781b8;
+  border: 4px solid white;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  width: 43px;
+  height: 43px;
+  transform: rotate(-6deg);
+}
+.preview-empty h3 {
+  font-size: 16px;
+  letter-spacing: -0.3px;
+  font-weight: 550;
+}
+.preview-empty > p {
+  font-size: 12px;
+  color: #716c7e;
+  line-height: 1.8;
+  max-width: 270px;
+  margin-top: 9px;
+}
+.empty-label {
+  font-size: 9px;
+  color: #716c7e;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 22px;
+}
+.empty-label > span {
+  height: 4px;
+  width: 4px;
+  border-radius: 100%;
+  background: #bfb3d0;
+}
+.document-content {
+  padding: 22px 26px;
+}
+.document-stats {
+  display: flex;
+  gap: 0;
+  margin: 0 0 22px;
+  padding: 15px 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fcfbfd;
+}
+.document-stats > div {
+  flex: 1;
+  padding: 0 16px;
+  border-right: 1px solid var(--border);
+}
+.document-stats > div:last-child {
+  border: 0;
+}
+.document-stats dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+.document-stats dd {
+  margin: 6px 0 0;
+  font-size: 20px;
+  font-weight: 550;
+}
+.text-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #716c7e;
+  font-size: 9px;
+}
+.text-preview-heading > span:first-child {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  letter-spacing: 0.8px;
+}
+.text-preview {
+  font:
+    12px/1.9 "Segoe UI",
+    sans-serif;
+  color: #5f6374;
+  background: #fcfbfe;
+  border: 1px solid #efedf4;
+  border-radius: 8px;
+  padding: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  max-height: 280px;
+  min-height: 210px;
+  margin: 12px 0;
+}
+.preview-footnote {
+  color: #716c7e;
+  font-size: 10px;
+  line-height: 1.7;
+}
+/* ========================================================================
+   FEATURE LIST: the two "Available" feature rows
+   ======================================================================== */
+.next-section {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 26px;
+  align-items: center;
+  margin: 30px 0 0;
+  background: #f2f0f7;
+  border: 1px solid #eae5f1;
+  border-radius: 13px;
+  padding: 24px 26px;
+}
+.next-intro .eyebrow {
+  font-size: 8px;
+  letter-spacing: 1.1px;
+  margin-bottom: 9px;
+  color: #716c7e;
+}
+.next-intro h2 {
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -0.4px;
+}
+.future-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.feature-icon {
+  display: grid;
+  place-items: center;
+  background: #e9e4f2;
+  border: 1px solid #e3dced;
+  color: #716c7e;
+  height: 39px;
+  width: 39px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+.future-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.future-heading h3 {
+  font-size: 12px;
+  font-weight: 550;
+  color: #625b75;
+}
+.future-heading > span {
+  color: #716c7e;
+  border: 1px solid #ded6e8;
+  border-radius: 4px;
+  font-size: 8px;
+  padding: 2px 5px;
+}
+.future-feature p {
+  color: #716c7e;
+  font-size: 10px;
+  line-height: 1.8;
+  margin-top: 6px;
+}
+/* ========================================================================
+   HOW IT WORKS: the three numbered steps
+   ======================================================================== */
+.how-it-works {
+  margin: 43px 0 42px;
+  scroll-margin-top: 25px;
+}
+.how-it-works > h2 {
+  font-size: 14px;
+  letter-spacing: -0.1px;
+  font-weight: 550;
+  margin-bottom: 21px;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 23px;
+}
+.steps > div {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.steps > div > span {
+  height: 27px;
+  width: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e5dfef;
+  border-radius: 50%;
+  font-size: 11px;
+  color: #716c7e;
+  background: #f6f3fa;
+  flex-shrink: 0;
+}
+.steps strong {
+  display: block;
+  color: #697083;
+  font-size: 11px;
+  font-weight: 550;
+  margin-bottom: 5px;
+}
+.steps p {
+  font-size: 10px;
+  color: #716c7e;
+  line-height: 1.65;
+}
+/* ========================================================================
+   FOOTER
+   ======================================================================== */
+footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding: 24px 0 26px;
+  border-top: 1px solid var(--border);
+  color: #716c7e;
+  font-size: 10px;
+}
+.footer-brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: #716c7e;
+}
+.footer-brand > span {
+  color: #aa9ac4;
+}
+/* ========================================================================
+   ACCESSIBILITY HELPERS AND THE LOADING SPINNER
+   .visually-hidden hides an element from the screen while leaving it readable by
+   screen readers. .skip-link stays hidden until it is focused with the Tab key.
+   ======================================================================== */
+.visually-hidden {
+  position: absolute;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip-link {
+  position: fixed;
+  left: 16px;
+  top: -60px;
+  background: white;
+  border: 1px solid var(--accent);
+  padding: 12px;
+  border-radius: 7px;
+  z-index: 10;
+  font-size: 13px;
+}
+.skip-link:focus {
+  top: 12px;
+}
+.spinner {
+  display: inline-block;
+  border: 2px solid #ffffff60;
+  border-top-color: white;
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========================================================================
+   03 - SUMMARY CARD: the five summary sections
+   ======================================================================== */
+.summary-card {
+  margin-top: 26px;
+  padding: 26px;
+  scroll-margin-top: 24px;
+}
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.summary-header .button {
+  flex-shrink: 0;
+  gap: 9px;
+}
+.summary-privacy {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-top: 17px;
+}
+.summary-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fcfaff;
+  color: #716c7e;
+  padding: 20px;
+  margin-top: 20px;
+}
+.summary-empty > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.summary-empty > p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.summary-loading {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--accent-dark);
+  margin-top: 18px;
+  padding: 17px;
+  border: 1px solid #e7e0f2;
+  border-radius: 9px;
+  background: #fcfaff;
+}
+.summary-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--success);
+  white-space: nowrap;
+}
+.summary-source {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin: 20px 0 0;
+  overflow-wrap: anywhere;
+}
+.summary-sections {
+  margin-top: 22px;
+}
+.summary-section {
+  padding: 23px 0;
+  border-top: 1px solid var(--border);
+}
+.summary-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+.summary-section-heading > span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--lavender);
+  border-radius: 7px;
+  padding: 7px;
+  flex-shrink: 0;
+}
+.summary-section h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.summary-section > p {
+  font-size: 14px;
+  line-height: 1.95;
+  color: #5f6374;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-width: 88ch;
+  margin-left: 40px;
+}
+.summary-footnote {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ========================================================================
+   04 - CHAT PANEL: question form, turns and source excerpts
+   ======================================================================== */
+.chat-card {
+  margin-top: 26px;
+  padding: 26px;
+  scroll-margin-top: 24px;
+}
+.chat-badge {
+  font-size: 10px;
+  color: var(--accent-dark);
+  background: var(--lavender);
+  border: 1px solid #e7e0f2;
+  padding: 7px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.chat-privacy,
+.chat-footnote {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin-top: 17px;
+}
+.chat-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 23px 0;
+  padding: 23px;
+  background: #fcfaff;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.chat-empty > span {
+  width: 35px;
+  height: 35px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--lavender);
+  color: var(--accent);
+  flex-shrink: 0;
+  font-size: 20px;
+}
+.chat-empty h3 {
+  font-size: 14px;
+  font-weight: 550;
+}
+.chat-empty p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.chat-history {
+  list-style: none;
+  padding: 0;
+  margin: 23px 0;
+}
+.chat-history > li {
+  margin-top: 21px;
+}
+.chat-message {
+  padding: 17px 19px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.chat-user {
+  background: #f4f0fa;
+  margin-left: 8%;
+  border-color: #e9e2f2;
+  border-bottom-right-radius: 4px;
+}
+.chat-assistant {
+  background: #fcfcfe;
+  margin: 10px 5% 0 0;
+  border-bottom-left-radius: 4px;
+}
+.message-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.7px;
+  color: var(--accent-dark);
+  margin-bottom: 9px;
+}
+.message-text {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #555d71;
+  white-space: pre-line;
+}
+.chat-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--accent-dark);
+}
+.chat-loading .spinner {
+  border-color: #d8cbe9;
+  border-top-color: var(--accent);
+  flex-shrink: 0;
+}
+.chat-sources {
+  margin-top: 17px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.chat-sources > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent-dark);
+  width: fit-content;
+}
+.source-passage {
+  margin: 13px 0 0;
+  border-left: 2px solid #c5b7dc;
+  padding: 0 0 0 13px;
+}
+.source-passage figcaption {
+  font-size: 10px;
+  color: #716c7e;
+  margin-bottom: 7px;
+}
+.source-passage strong {
+  font-weight: 600;
+}
+.source-passage blockquote {
+  font-size: 12px;
+  line-height: 1.85;
+  color: #6a6e7e;
+  margin: 0;
+  white-space: pre-line;
+}
+.evidence-note {
+  display: inline-block;
+  padding: 4px 7px;
+  margin-bottom: 9px;
+  font-size: 10px;
+  color: #6a5d35;
+  border: 1px solid #e7dfc5;
+  background: #faf7ec;
+  border-radius: 5px;
+}
+.chat-context {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-bottom: 10px;
+}
+.chat-error {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #a04939;
+}
+.chat-error strong {
+  font-weight: 600;
+}
+.chat-error p {
+  margin: 5px 0 13px;
+}
+.chat-error .button {
+  padding: 8px 12px;
+  font-size: 11px;
+  min-height: 36px;
+}
+.chat-form {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+.chat-form > label {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  margin-bottom: 10px;
+}
+.chat-form textarea {
+  display: block;
+  width: 100%;
+  min-height: 91px;
+  resize: vertical;
+  border: 1px solid #dcd7e6;
+  border-radius: 9px;
+  padding: 13px 14px;
+  font:
+    13px/1.8 "Segoe UI",
+    sans-serif;
+  color: var(--ink);
+  background: #fdfcfe;
+}
+.chat-form textarea::placeholder {
+  color: #797385;
+}
+.chat-form textarea:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.chat-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+}
+.chat-form-footer > p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #716c7e;
+}
+.chat-form-footer > p > span {
+  margin-left: 10px;
+  white-space: nowrap;
+}
+.chat-form-footer .button {
+  flex-shrink: 0;
+}
+.chat-input-error {
+  margin-top: 12px;
+  color: #a04939;
+  font-size: 12px;
+}
+
+/* ========================================================================
+   RESPONSIVE RULES
+   Read these from widest to narrowest. Each block only overrides what must
+   change at that width:
+     max-width 1100px - the two-column workspace becomes one column
+     max-width 760px  - tablet and large phone spacing
+     max-width 420px  - small phone spacing
+     prefers-reduced-motion - turns animation off for users who ask for that
+   ======================================================================== */
+@media (max-width: 760px) {
+  .chat-card {
+    padding: 22px;
+  }
+  .chat-form-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .chat-form-footer .button {
+    align-self: flex-end;
+  }
+  .chat-user {
+    margin-left: 4%;
+  }
+  .chat-assistant {
+    margin-right: 0;
+  }
+  .chat-message {
+    padding: 15px;
+  }
+  .summary-card {
+    padding: 22px;
+  }
+  .summary-header {
+    flex-wrap: wrap;
+    gap: 19px;
+  }
+  .summary-section > p {
+    margin-left: 0;
+    font-size: 13px;
+  }
+}
+@media (min-width: 1440px) {
+  .intro {
+    padding-top: 65px;
+  }
+}
+@media (max-width: 1100px) {
+  .app-shell {
+    padding: 0 36px;
+  }
+  .workspace-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .upload-card,
+  .preview-heading,
+  .document-content {
+    padding: 22px;
+  }
+  .preview-heading {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .next-section {
+    grid-template-columns: 0.9fr 1.2fr 1fr;
+    padding: 22px;
+    gap: 18px;
+  }
+  .future-feature {
+    gap: 8px;
+  }
+  .feature-icon {
+    height: 32px;
+    width: 32px;
+  }
+  .text-preview-heading {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+}
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 0 22px;
+  }
+  .site-header {
+    height: 80px;
+  }
+  .brand {
+    font-size: 22px;
+    gap: 8px;
+  }
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+  .header-right {
+    gap: 14px;
+  }
+  .header-right > a {
+    font-size: 11px;
+  }
+  .phase-badge {
+    font-size: 8px;
+    padding: 6px 8px;
+  }
+  .phase-badge span {
+    display: none;
+  }
+  .intro {
+    padding: 38px 0 30px;
+  }
+  h1 {
+    font-size: 43px;
+    letter-spacing: -1.8px;
+  }
+  .intro-copy {
+    font-size: 13px;
+  }
+  .desktop-break {
+    display: none;
+  }
+  .workspace-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .preview-heading {
+    flex-wrap: nowrap;
+  }
+  .preview-empty {
+    min-height: 350px;
+  }
+  .next-section {
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  .next-intro {
+    grid-column: 1 / -1;
+  }
+  .next-intro h2 br {
+    display: none;
+  }
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 19px;
+  }
+  .how-it-works {
+    margin: 32px 0;
+  }
+  footer {
+    flex-wrap: wrap;
+    font-size: 9px;
+  }
+  footer > p {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 420px) {
+  .app-shell {
+    padding: 0 17px;
+  }
+  .header-right > a {
+    display: none;
+  }
+  .mobile-break {
+    display: block;
+  }
+  .eyebrow {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+  }
+  .local-note {
+    font-size: 9px;
+    gap: 5px;
+  }
+  .upload-card,
+  .preview-heading,
+  .document-content {
+    padding: 19px;
+  }
+  h2 {
+    font-size: 19px;
+  }
+  .preview-heading {
+    flex-wrap: wrap;
+  }
+  .next-section {
+    grid-template-columns: 1fr;
+  }
+  .next-intro {
+    grid-column: auto;
+  }
+  .document-stats > div {
+    padding: 0 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
