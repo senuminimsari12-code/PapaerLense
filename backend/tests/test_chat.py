@@ -100,6 +100,9 @@ def test_invalid_questions_are_rejected(client, make_pdf, body):
     document_id = upload(client, make_pdf)
     response = client.post(f"/api/documents/{document_id}/chat", json=body)
     assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Send a JSON object with one non-blank question of up to 1,000 characters."
+    }
     assert "retrieval_index" not in documents[document_id]
 
 

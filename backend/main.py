@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -189,12 +190,21 @@ app.add_middleware(UploadBodyLimit)
 app.add_middleware(
     # Browsers block cross-origin requests unless the server allows them. Only the two
     # local Vite addresses are allowed: 5173 for `npm run dev`, 4173 for `npm run preview`.
-    # Any other website's JavaScript is refused by the browser.
+    # Other origins cannot read responses through browser CORS. This is not access control.
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:4173"],
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(_request: Request, _error: RequestValidationError):
+    """Return a safe validation error without reflecting submitted data."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Send a JSON object with one non-blank question of up to 1,000 characters."},
+    )
 
 
 @app.get("/api/health")
