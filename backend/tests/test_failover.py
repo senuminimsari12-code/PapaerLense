@@ -205,9 +205,9 @@ def test_chat_retrieves_once_and_preserves_evidence_and_citations(client, make_p
     original_retrieve = main.retrieve_chunks
     queries = []
 
-    def retrieve(index, query):
+    def retrieve(index, query, page_numbers=None):
         queries.append(query)
-        return original_retrieve(index, query)
+        return original_retrieve(index, query, page_numbers)
 
     monkeypatch.setattr(main, "retrieve_chunks", retrieve)
     document_id = upload(client, make_pdf)

@@ -373,6 +373,48 @@ TWO_MATCHING_PAGES = (
 )
 
 
+@pytest.mark.parametrize("question", [
+    "What does page 3 describe?",
+    "What does page 3 say about classifier accuracy?",
+])
+def test_explicit_page_sends_only_passages_from_that_page(client, make_pdf, mock_gemini, question):
+    calls = mock_gemini(payload({
+        "answer": "The classifier accuracy was measured on the validation dataset. [Page 3]",
+        "cited_chunk_ids": ["chunk-2"],
+        "insufficient_evidence": False,
+    }))
+    document_id = upload(client, make_pdf, TWO_MATCHING_PAGES)
+    response = ask(client, document_id, question)
+
+    assert response.status_code == 200
+    assert [item["page_number"] for item in sent_evidence(calls[0])["passages"]] == [3]
+    assert [item["page_number"] for item in response.json()["sources"]] == [3]
+
+
+@pytest.mark.parametrize("page_number", [1, 999])
+def test_blank_or_missing_requested_page_does_not_call_provider(
+    client, make_pdf, mock_gemini, page_number
+):
+    calls = mock_gemini(payload())
+    document_id = upload(client, make_pdf, TWO_MATCHING_PAGES)
+    response = ask(client, document_id, f"What does page {page_number} describe?")
+
+    assert response.status_code == 200
+    assert response.json()["insufficient_evidence"] is True
+    assert response.json()["sources"] == []
+    assert calls == []
+
+
+def test_existing_page_outside_requested_evidence_cannot_be_cited(client, make_pdf, mock_gemini):
+    calls = mock_gemini(payload())
+    document_id = upload(client, make_pdf, TWO_MATCHING_PAGES)
+    response = ask(client, document_id, "What does page 3 describe?")
+
+    assert response.status_code == 502
+    assert [item["page_number"] for item in sent_evidence(calls[0])["passages"]] == [3]
+    assert not documents[document_id].get("chat_cache")
+
+
 @pytest.mark.parametrize("answer_text", [
     "Page 2 describes the classifier accuracy of 93 percent. [Page 2]",
     "The description on page 2 covers the image classifier. [Page 2]",

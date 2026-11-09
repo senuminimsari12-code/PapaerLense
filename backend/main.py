@@ -41,7 +41,7 @@ from backend.chat import (
     follow_up_context, generate_answer, remember_answer,
 )
 from backend.pdf_processing import MAX_UPLOAD_BYTES, PDFError, extract_pdf
-from backend.retrieval import build_index, retrieve_chunks
+from backend.retrieval import PAGE_REFERENCE, build_index, retrieve_chunks
 from backend.summarization import SummaryError, SummaryResponse, generate_summary
 
 # Load API keys from the .env file at the repository root. override=False means a real
@@ -480,8 +480,10 @@ async def chat_with_document(document_id: str, request: ChatRequest):
         else:
             search_text = question + "\n" + context_question
 
+        # Page references in an earlier topic do not constrain the new question.
+        page_numbers = {int(number) for number in PAGE_REFERENCE.findall(question)}
         passages = await run_in_threadpool(
-            retrieve_chunks, document["retrieval_index"], search_text
+            retrieve_chunks, document["retrieval_index"], search_text, page_numbers
         )
         raise_if_document_was_replaced(
             document_id, document, "This document was replaced. Use the current PDF."
