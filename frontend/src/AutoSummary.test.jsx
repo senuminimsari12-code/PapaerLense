@@ -112,6 +112,17 @@ it("retries only on explicit action, targets the current document and guards dou
   expect(summaries()).toHaveLength(2);
 });
 
+it("reports a summary failure with a null JSON body and keeps the paper", async () => {
+  fetch.mockResolvedValueOnce(ok(paper))
+    .mockResolvedValueOnce({ ok: false, json: async () => null });
+  render(<App />);
+  choose();
+  await screen.findByText(/The summary could not be generated/);
+  expect(screen.getByText(paper.preview)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry summary" })).toBeTruthy();
+  expect(summaries()).toHaveLength(1);
+});
+
 it("retry after replacement targets only the current document", async () => {
   fetch.mockResolvedValueOnce(ok(paper)).mockResolvedValueOnce(failure("First summary failed."));
   render(<App />); choose();

@@ -12,24 +12,23 @@ because a summary has to cover everything.
 
 Two deliberate design decisions worth understanding:
 
-- We never silently shorten a paper. If the text is too big for one request, the upload
-  is refused with an explanation instead of summarising half the paper and presenting it
-  as a summary of all of it.
+- We never silently shorten a paper. If the text is too big for one request, summary
+  generation is refused with an explanation. The uploaded paper remains available.
 - A reply missing any of the five sections is rejected outright. The frontend can
   therefore rely on all five always being present.
 """
 
+import json
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 # SummaryError is just ProviderError under a clearer name for this file's readers.
 from backend.ai_errors import ProviderError as SummaryError
 from backend.ai_providers import generate_with_failover
 
-# The largest paper we will send in one request, measured in UTF-8 bytes rather than
-# characters because that is what the provider's limit actually applies to. Note bytes
-# are not tokens; this is a rough safety bound, not an exact token count.
+# PaperLense caps the full labeled input in UTF-8 bytes. Providers can have separate
+# request and token limits.
 MAX_SUMMARY_INPUT_BYTES = 120_000
 
 SUMMARY_TIMEOUT_SECONDS = 90
@@ -129,16 +128,27 @@ def build_paper_text(pages: list[dict]) -> str:
     return paper_text
 
 
+def unique_json_fields(pairs: list[tuple[str, object]]) -> dict:
+    """Reject repeated keys before a JSON parser can silently overwrite them."""
+    fields = {}
+    for name, value in pairs:
+        if name in fields:
+            raise ValueError("Repeated JSON field")
+        fields[name] = value
+    return fields
+
+
 def parse_summary_response(text: str) -> PaperSummary:
     """Turn the provider's JSON text into a checked PaperSummary.
 
-    Pydantic does the real work: it parses the JSON and enforces that all five sections
+    The JSON decoder rejects repeated keys, then Pydantic enforces that all five sections
     are present, are strings, and are within length limits. Any failure becomes one safe
     SummaryError, so the provider's raw output never reaches the user or a log file.
     """
     try:
+        json.loads(text, object_pairs_hook=unique_json_fields)
         return PaperSummary.model_validate_json(text)
-    except (KeyError, TypeError, AttributeError, ValueError, ValidationError):
+    except (TypeError, ValueError, RecursionError):
         raise SummaryError(
             "The AI provider returned an invalid or incomplete summary. Please try again."
         ) from None

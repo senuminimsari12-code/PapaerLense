@@ -187,6 +187,21 @@ def test_invalid_summary_fields_are_rejected(client, make_pdf, mock_provider, co
     assert "summary" not in documents[document_id]
 
 
+def test_repeated_summary_field_is_rejected_and_not_cached(client, make_pdf, mock_provider):
+    payload = provider_payload()
+    part = payload["candidates"][0]["content"]["parts"][0]
+    part["text"] = part["text"][:-1] + ', "conclusion": "private repeated value"}'
+    mock_provider(payload=payload)
+
+    document_id = upload(client, make_pdf)
+    response = client.post(f"/api/documents/{document_id}/summary")
+
+    assert response.status_code == 502
+    assert "invalid or incomplete summary" in response.json()["detail"]
+    assert "private repeated value" not in response.text
+    assert "summary" not in documents[document_id]
+
+
 @pytest.mark.parametrize("payload", [
     {"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": "incomplete"}]}}]},
     {"candidates": [{"finishReason": "SAFETY", "finishMessage": "private details"}]},
