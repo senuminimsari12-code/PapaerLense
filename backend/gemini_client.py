@@ -227,6 +227,8 @@ async def request_gemini(instructions: str, contents: str, schema: dict,
         base_url=GEMINI_API_URL,
         api_version="v1beta",
         timeout=http_timeout_ms,
+        # A redirect could replay the API key header and document at another host.
+        async_client_args={"follow_redirects": False},
         # attempts=1 means "try once, never retry". See this file's docstring.
         retry_options=types.HttpRetryOptions(attempts=1),
     )
