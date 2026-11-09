@@ -192,6 +192,33 @@ describe("PaperLense upload flow", () => {
     expect(screen.queryByText("Page 1 Original research preview")).toBeNull();
   });
 
+  it("aborts a timed-out upload and accepts a retry without a duplicate summary", async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementationOnce((_url, { signal }) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      }),
+    );
+    render(<App />);
+    choose();
+    expect(screen.getByRole("button", { name: "Processing PDF" }).disabled).toBe(true);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("Processing took too long.");
+    expect(screen.getByRole("button", { name: "Choose another PDF" }).disabled).toBe(false);
+    expect(screen.queryByLabelText("Extracted text preview")).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => { choose(); });
+    expect(screen.getByText("Page 1 Original research preview")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+      "/api/upload", "/api/upload", "/api/documents/document-one/summary",
+    ]);
+  });
+
   it("rejects incomplete server success responses", async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
