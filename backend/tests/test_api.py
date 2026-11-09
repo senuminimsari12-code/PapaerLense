@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import threading
 from uuid import UUID
@@ -107,6 +108,43 @@ def test_streamed_request_without_content_length_is_bounded(client):
             yield b"x" * (1024 * 1024)
     response = client.post("/api/upload", content=body(), headers={"content-type": "multipart/form-data; boundary=example"})
     assert response.status_code == 413
+
+
+def test_oversized_chat_body_stops_reading_and_leaves_document_intact(client, make_pdf):
+    document_id = client.post("/api/upload", files={"file": ("paper.pdf", make_pdf())}).json()["document_id"]
+    chunks_sent = []
+
+    async def body():
+        yield b'{"question":"'
+        for index in range(16):
+            chunks_sent.append(index)
+            yield b"x" * 4096
+        yield b'"}'
+
+    async def send():
+        transport = httpx.ASGITransport(app=main.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as browser:
+            return await browser.post(
+                f"/api/documents/{document_id}/chat",
+                content=body(),
+                headers={"Content-Type": "application/json", "Origin": "http://localhost:5173"},
+            )
+
+    response = asyncio.run(send())
+    assert response.status_code == 413
+    assert len(chunks_sent) < 16
+    assert response.json() == {"detail": "The chat request exceeds the 16 KiB body limit."}
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "retrieval_index" not in documents[document_id]
+
+
+def test_chat_body_limit_accepts_maximum_question_with_escaped_unicode(client):
+    body = json.dumps({"question": "😀" * 1000}, ensure_ascii=True)
+    response = client.post(
+        "/api/documents/missing/chat", content=body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 404
 
 
 def test_exact_file_size_limit_is_accepted(client, make_pdf):
