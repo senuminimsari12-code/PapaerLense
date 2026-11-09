@@ -302,7 +302,7 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          typeof result.detail === "string"
+          typeof result?.detail === "string"
             ? result.detail
             : "The summary could not be generated. Please try again.",
         );
