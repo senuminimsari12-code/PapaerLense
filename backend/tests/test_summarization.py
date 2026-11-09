@@ -288,6 +288,42 @@ def test_replaced_document_cannot_use_old_cached_summary(client, make_pdf, mock_
     assert "summary" not in documents[second]
 
 
+def test_cancelled_summary_releases_busy_state_and_can_be_retried(make_pdf, mock_provider):
+    async def scenario():
+        started = asyncio.Event()
+
+        async def pause(request):
+            started.set()
+            await asyncio.Future()
+
+        requests = mock_provider(handler=pause)
+        transport = httpx.ASGITransport(app=main.app)
+        async with REAL_ASYNC_CLIENT(transport=transport, base_url="http://test") as client:
+            uploaded = await client.post("/api/upload", files={"file": ("paper.pdf", make_pdf())})
+            document_id = uploaded.json()["document_id"]
+            endpoint = f"/api/documents/{document_id}/summary"
+            pending = asyncio.create_task(client.post(endpoint))
+            try:
+                await asyncio.wait_for(started.wait(), timeout=3)
+            finally:
+                pending.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await pending
+
+            assert len(requests) == 1
+            assert not documents[document_id]["summary_in_progress"]
+            assert "summary" not in documents[document_id]
+
+            retry_requests = mock_provider()
+            retry = await client.post(endpoint)
+            assert retry.status_code == 200
+            assert retry.json()["summary"] == TEST_SUMMARY
+            assert (await client.post(endpoint)).json() == retry.json()
+            assert len(retry_requests) == 1
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("replace_document", [False, True])
 def test_in_flight_duplicate_or_replacement_does_not_corrupt_state(make_pdf, mock_provider, replace_document):
     async def scenario():
