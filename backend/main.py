@@ -74,6 +74,7 @@ documents: dict[str, dict] = {}
 # markers). Without it, a file at exactly the limit could be rejected for being a few
 # hundred bytes too large once wrapped in a form.
 MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024
+MAX_CHAT_BODY_BYTES = 16 * 1024
 
 # How much we read from the network at a time while receiving an upload.
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024
@@ -93,8 +94,8 @@ class UploadResponse(BaseModel):
     preview: str
 
 
-class UploadBodyLimit:
-    """Stop an oversized upload while it is still arriving.
+class RequestBodyLimit:
+    """Stop oversized PDF uploads and chat requests while they are still arriving.
 
     This is ASGI middleware, which is a lower level than a normal FastAPI route. It is
     worth the extra complexity for one reason: FastAPI only hands us the file after the
@@ -116,8 +117,19 @@ class UploadBodyLimit:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        # Only guard the upload endpoint. Everything else passes straight through.
-        if scope["type"] != "http" or scope["path"] != "/api/upload":
+        if scope["type"] != "http" or scope["method"] != "POST":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope["path"]
+        if path == "/api/upload":
+            byte_limit = MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_ALLOWANCE
+            limit_message = "This upload exceeds the 20 MB (20 MiB) limit."
+        elif path.startswith("/api/documents/") and path.endswith("/chat"):
+            # Leave room for a 1,000-character question even when JSON escapes it.
+            byte_limit = MAX_CHAT_BODY_BYTES
+            limit_message = "The chat request exceeds the 16 KiB body limit."
+        else:
             await self.app(scope, receive, send)
             return
 
@@ -129,8 +141,8 @@ class UploadBodyLimit:
             message = await receive()
             bytes_received += len(message.get("body", b""))
 
-            if bytes_received > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_ALLOWANCE:
-                raise HTTPException(413, "This upload exceeds the 20 MB (20 MiB) limit.")
+            if bytes_received > byte_limit:
+                raise HTTPException(413, limit_message)
 
             return message
 
@@ -140,9 +152,7 @@ class UploadBodyLimit:
 class ContainUnexpectedErrors:
     """Turn any unexpected crash into a plain 500, revealing nothing private.
 
-    Why not use FastAPI's exception handler instead? Because a handler runs after the
-    request body has been buffered, which would undo the streaming protection in
-    UploadBodyLimit above. This middleware wraps `send` only, so uploads still stream.
+    This middleware wraps `send` only, so it does not buffer the request body.
 
     The security point: a Python error message or traceback can easily contain an API
     key, a file path, or a sentence from the user's paper. So we log only the exception's
@@ -190,9 +200,9 @@ class ContainUnexpectedErrors:
 
 # Middleware order matters, and reads backwards: the LAST one added is the OUTERMOST,
 # so it sees the request first. The effective order for an upload is therefore:
-#   CORS  ->  UploadBodyLimit  ->  ContainUnexpectedErrors  ->  the endpoint.
+#   CORS  ->  RequestBodyLimit  ->  ContainUnexpectedErrors  ->  the endpoint.
 app.add_middleware(ContainUnexpectedErrors)
-app.add_middleware(UploadBodyLimit)
+app.add_middleware(RequestBodyLimit)
 app.add_middleware(
     # Browsers block cross-origin requests unless the server allows them. Only the two
     # local Vite addresses are allowed: 5173 for `npm run dev`, 4173 for `npm run preview`.

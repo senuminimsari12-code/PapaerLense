@@ -288,7 +288,8 @@ HTTP 200 returns `document_id`, plain-text `answer`, `sources` (`chunk_id`, `pag
 | --- | --- |
 | 404 | Missing, expired or replaced document |
 | 409 | Another question for this document is in progress |
-| 422 | Blank, oversized, missing or invalid question/body |
+| 413 | Chat request body exceeds 16 KiB, or the AI providers reject the request for size |
+| 422 | Blank, missing, invalid, or longer-than-1,000-character question |
 | 429 | Provider quota or rate limit |
 | 502 | Rejected/malformed output, incomplete generation, refusal or invalid citations |
 | 503 | Missing configuration, credential/access rejection, unavailable provider or network failure |
