@@ -12,6 +12,7 @@
 
 import Icon from "./Icon.jsx";
 import { formatFileSize } from "./fileSize.js";
+import { useTranslation } from "./interfacePreferences.jsx";
 
 export default function UploadCard({
   selectedFile,
@@ -23,6 +24,7 @@ export default function UploadCard({
   onFilesSelected,
   onDraggingChange,
 }) {
+  const t = useTranslation();
   function handleDrop(event) {
     // Without preventDefault the browser would navigate away and open the PDF itself.
     event.preventDefault();
@@ -85,11 +87,11 @@ export default function UploadCard({
   return (
     <section className="card upload-card" aria-labelledby="upload-title" aria-busy={isUploading}>
       <div className="card-eyebrow">
-        <span>01 / YOUR DOCUMENT</span>
+        <span>{t("01 / YOUR DOCUMENT")}</span>
         <span className="file-type">PDF</span>
       </div>
-      <h2 id="upload-title">Start with your paper</h2>
-      <p className="card-description">One paper. A fresh perspective.</p>
+      <h2 id="upload-title">{t("Start with your paper")}</h2>
+      <p className="card-description">{t("One paper. A fresh perspective.")}</p>
 
       {/*
         The real file input is hidden, because browsers style it inconsistently and it
@@ -104,7 +106,7 @@ export default function UploadCard({
         type="file"
         tabIndex={-1}
         accept=".pdf,application/pdf"
-        aria-label="Choose a research paper PDF"
+        aria-label={t("Choose a research paper PDF")}
         disabled={isUploading}
         onChange={handleFileInputChange}
       />
@@ -118,8 +120,8 @@ export default function UploadCard({
         <span className={`upload-symbol ${isUploading ? "processing" : ""}`}>
           <Icon name={document ? "check" : "upload"} size={30} />
         </span>
-        <h3>{dropZoneHeading}</h3>
-        <p>{dropZoneMessage}</p>
+        <h3>{t(dropZoneHeading)}</h3>
+        <p>{t(dropZoneMessage)}</p>
         <button
           className={`button ${document ? "button-secondary" : "button-primary"}`}
           type="button"
@@ -128,18 +130,15 @@ export default function UploadCard({
         >
           {isUploading ? (
             <>
-              <span className="spinner" /> Processing PDF
-            </>
+              <span className="spinner" />{" "}{t("Processing PDF")}</>
           ) : (
             <>
-              {selectedFile ? "Choose another PDF" : "Choose PDF"}
+              {t(selectedFile ? "Choose another PDF" : "Choose PDF")}
               <Icon name="arrow" size={17} />
             </>
           )}
         </button>
-        <span className="upload-limit">
-          PDF only <span aria-hidden="true">·</span> Up to 20 MB (20 MiB)
-        </span>
+        <span className="upload-limit">{t("PDF only")}{" "}<span aria-hidden="true">·</span>{" "}{t("Up to 20 MB (20 MiB)")}</span>
       </div>
 
       {selectedFile && (
@@ -150,8 +149,10 @@ export default function UploadCard({
           <div>
             <p title={selectedFile.name}>{selectedFile.name}</p>
             <span>
-              {formatFileSize(selectedFile.size)}{" "}
-              <span aria-hidden="true">·</span> {selectedFileStatus}
+              {selectedFile.size < 1024
+                ? t("{count} bytes", { count: selectedFile.size })
+                : formatFileSize(selectedFile.size)}{" "}
+              <span aria-hidden="true">·</span> {t(selectedFileStatus)}
             </span>
           </div>
           {document && <Icon name="check" size={19} className="success-icon" />}
@@ -165,14 +166,13 @@ export default function UploadCard({
       */}
       <div className="status-region" aria-live="polite" aria-atomic="true">
         {isUploading && (
-          <p className="processing-message" role="status">
-            Processing your PDF. This can take a moment.
-          </p>
+          <p className="processing-message" role="status">{t("Processing your PDF. This can take a moment.")}</p>
         )}
         {document && (
           <p className="success-message" role="status">
-            <Icon name="check" size={17} /> Successfully extracted {document.page_count}{" "}
-            {document.page_count === 1 ? "page" : "pages"}.
+            <Icon name="check" size={17} /> {t(document.page_count === 1
+              ? "Successfully extracted {count} page."
+              : "Successfully extracted {count} pages.", { count: document.page_count })}
           </p>
         )}
       </div>
@@ -182,20 +182,15 @@ export default function UploadCard({
         <div className="error-message" role="alert">
           <Icon name="alert" size={20} />
           <div>
-            <strong>We couldn’t process this file</strong>
-            <p>{error}</p>
+            <strong>{t("We couldn’t process this file")}</strong>
+            <p>{t(error)}</p>
           </div>
         </div>
       )}
 
       <p className="privacy-note">
         <Icon name="shield" size={16} />
-        <span>
-          Your PDF is processed by the local backend. Only the latest extracted
-          document is kept in memory. A summary starts automatically and sends
-          extracted text to configured providers as needed. Upload only public or
-          non-sensitive papers.
-        </span>
+        <span>{t("Your PDF is processed by the local backend. Only the latest extracted document is kept in memory. A summary starts automatically and sends extracted text to configured providers as needed. Upload only public or non-sensitive papers.")}</span>
       </p>
     </section>
   );
