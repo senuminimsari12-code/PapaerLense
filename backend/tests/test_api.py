@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import threading
 from uuid import UUID
 
+import httpx
 import pytest
 from starlette.datastructures import UploadFile
 from io import BytesIO
@@ -15,6 +17,45 @@ def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_uploads_share_one_pdf_worker_without_blocking_health(make_pdf, monkeypatch):
+    data = make_pdf()
+    release_parser = threading.Event()
+    worker_ids = []
+    real_extract = main.extract_pdf
+
+    async def exercise():
+        loop = asyncio.get_running_loop()
+        first_started = asyncio.Event()
+
+        def extract(data):
+            worker_ids.append(threading.get_ident())
+            if len(worker_ids) == 1:
+                loop.call_soon_threadsafe(first_started.set)
+                assert release_parser.wait(timeout=5)
+            return real_extract(data)
+
+        monkeypatch.setattr(main, "extract_pdf", extract)
+        transport = httpx.ASGITransport(app=main.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            files = {"file": ("paper.pdf", data)}
+            first = asyncio.create_task(client.post("/api/upload", files=files))
+            second = None
+            try:
+                await asyncio.wait_for(first_started.wait(), timeout=3)
+                second = asyncio.create_task(client.post("/api/upload", files=files))
+                health = await asyncio.wait_for(client.get("/api/health"), timeout=3)
+                assert health.status_code == 200
+            finally:
+                release_parser.set()
+                first_response = await first
+                if second is not None:
+                    second_response = await second
+            assert first_response.status_code == second_response.status_code == 201
+            assert len(worker_ids) == 2 and worker_ids[0] == worker_ids[1]
+
+    asyncio.run(exercise())
 
 
 def test_upload_returns_real_metadata_and_stores_numbered_pages(client, make_pdf):

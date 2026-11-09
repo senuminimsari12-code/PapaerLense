@@ -69,7 +69,10 @@ def test_parser_repaired_document_is_rejected(make_pdf):
 
 
 def test_page_extraction_failure_logs_page_and_type_without_exception_text(make_pdf, monkeypatch, caplog):
-    def fail(*args, **kwargs):
+    opened_documents = []
+
+    def fail(page, *args, **kwargs):
+        opened_documents.append(page.parent)
         raise RuntimeError("private parser data")
 
     data = make_pdf()
@@ -78,6 +81,7 @@ def test_page_extraction_failure_logs_page_and_type_without_exception_text(make_
         extract_pdf(data)
     assert "page=1, error_type=RuntimeError" in caplog.text
     assert "private parser data" not in caplog.text + str(caught.value)
+    assert opened_documents[0].is_closed
 
 
 def test_page_limit_bounds_memory(make_pdf, monkeypatch):

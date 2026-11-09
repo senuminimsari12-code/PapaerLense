@@ -20,7 +20,9 @@ steps:
   backend/ai_providers.py    - call Gemini, then Groq, then OpenRouter.
 """
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -75,6 +77,10 @@ MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024
 
 # How much we read from the network at a time while receiving an upload.
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+# PyMuPDF must not run on multiple threads in the same process. A dedicated
+# worker keeps PDF extraction off the event loop and handles one PDF at a time.
+pdf_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pdf")
 
 
 class UploadResponse(BaseModel):
@@ -303,10 +309,8 @@ async def upload_pdf(request: Request):
 
         # Step 4: extract the text.
         try:
-            # PyMuPDF is normal blocking code, and parsing a large PDF takes a while.
-            # run_in_threadpool moves it to a worker thread so the server can still
-            # answer other requests (such as /api/health) while this one is parsing.
-            extracted = await run_in_threadpool(extract_pdf, pdf_bytes)
+            loop = asyncio.get_running_loop()
+            extracted = await loop.run_in_executor(pdf_worker, extract_pdf, pdf_bytes)
         except PDFError as error:
             # PDFError messages are written for users, so they are safe to pass on.
             # The log records sizes only, never the filename or any paper text.

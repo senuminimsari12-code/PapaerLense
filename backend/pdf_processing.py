@@ -1,7 +1,7 @@
 """Validate an uploaded PDF and pull out its text, one numbered page at a time.
 
-The PDF is never saved to disk. It arrives as bytes, PyMuPDF reads it from memory, and
-we keep only the extracted text.
+PyMuPDF reads the PDF from memory, and we keep only the extracted text after upload.
+The multipart parser may temporarily spool the upload to disk before extraction.
 
 The one function that matters here is extract_pdf. It runs six checks before trusting a
 file, in a deliberate order: the cheap checks that need no parsing come first, so an
@@ -137,7 +137,7 @@ def extract_pdf(data: bytes) -> dict:
     page_number = None
 
     try:
-        # stream=data reads the PDF straight from memory, so nothing touches the disk.
+        # stream=data lets PyMuPDF read the PDF straight from memory.
         # `with` guarantees PyMuPDF releases the document even if extraction fails.
         with pymupdf.open(stream=data, filetype="pdf") as document:
             check_document_is_usable(document)
