@@ -186,6 +186,8 @@ async def generate_with_failover(
     last_error = ProviderError(
         "The AI request timed out. Please try again.", 504, category="timeout"
     )
+    last_non_size_error = last_error
+    size_rejections = 0
 
     for position, provider in enumerate(configured_providers):
         started_at = event_loop.time()
@@ -240,6 +242,10 @@ async def generate_with_failover(
             return validated_result, model_used
 
         # Only reached when this provider failed. Log why, then try the next one.
+        if last_error.category == "payload_too_large":
+            size_rejections += 1
+        else:
+            last_non_size_error = last_error
         logger.warning(
             "AI provider=%s model=%s request=%s status=failed category=%s "
             "upstream_code=%s phase=%s duration_ms=%d fallback=%s",
@@ -248,13 +254,13 @@ async def generate_with_failover(
             (event_loop.time() - started_at) * 1000, provider.name != "gemini",
         )
 
-    # Every configured provider failed.
+    # No provider returned a valid result before the deadline.
     if len(configured_providers) == 1:
         # With a single provider there is no "they all failed" story to tell, so the
         # user gets that provider's specific reason instead of a vague summary.
         raise last_error
 
-    if last_error.category == "payload_too_large":
+    if size_rejections == len(configured_providers):
         # The paper was rejected for its size rather than for a fault, so say so. A
         # vague "try again later" would be wrong here: retrying the same paper cannot
         # help. PaperLense still never shortens the paper on its own.
@@ -262,11 +268,11 @@ async def generate_with_failover(
             "This paper is larger than the configured AI providers' request size limits. "
             "Try a shorter paper or a clearly labeled excerpt. "
             "Your PDF is still available and was not shortened.",
-            last_error.status_code, category="payload_too_large",
+            413, category="payload_too_large",
         )
 
     raise ProviderError(
         "The configured AI providers could not complete this request. "
         "Please try again later. Your PDF is still available.",
-        last_error.status_code,
+        last_non_size_error.status_code,
     )
