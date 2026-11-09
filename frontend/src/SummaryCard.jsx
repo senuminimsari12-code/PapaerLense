@@ -39,7 +39,6 @@ export default function SummaryCard({
       className="card summary-card"
       id="paper-summary"
       aria-labelledby="summary-title"
-      aria-busy={isSummarizing}
     >
       <div className="summary-header">
         <div>
@@ -93,14 +92,15 @@ export default function SummaryCard({
         </div>
       )}
 
-      <div className="summary-status" aria-live="polite" aria-atomic="true">
+      <div className="summary-status" role="status" aria-atomic="true">
         {isSummarizing && (
-          <p className="summary-loading" role="status">
-            Reading your paper and connecting its ideas. This can take up to 90 seconds.
+          <p className="summary-loading">
+            Generating a summary from the extracted text. This can take up to 90 seconds.
+            You can ask questions about your paper while you wait.
           </p>
         )}
         {summary && (
-          <p className="summary-source" role="status">
+          <p className="summary-source">
             Summary generated for {document.filename}. Based on the extracted text from{" "}
             {summary.source_page_count}{" "}
             {summary.source_page_count === 1 ? "page" : "pages"}.

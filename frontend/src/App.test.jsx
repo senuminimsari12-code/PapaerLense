@@ -344,7 +344,7 @@ describe("PaperLense structured summaries", () => {
       screen.getByRole("button", { name: "Generating summary…" }).disabled,
     ).toBe(true);
     expect(
-      screen.getByText(/Reading your paper and connecting its ideas/),
+      screen.getByText(/Generating a summary from the extracted text/),
     ).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
     await act(async () => {
