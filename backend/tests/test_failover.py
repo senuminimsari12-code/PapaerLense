@@ -361,6 +361,22 @@ def test_413_from_every_provider_explains_the_size_limit_safely(client, make_pdf
     assert OPENROUTER_KEY not in caplog.text + response.text
 
 
+@pytest.mark.parametrize("groq_status, expected_status", [(503, 503), (429, 429)])
+def test_final_413_does_not_hide_other_provider_failures(
+    client, make_pdf, mock_providers, groq_status, expected_status
+):
+    calls = mock_providers(gemini=504, groq=groq_status, openrouter=413)
+    document_id = upload(client, make_pdf)
+    response = client.post(f"/api/documents/{document_id}/summary")
+
+    assert response.status_code == expected_status
+    assert "could not complete" in response.json()["detail"]
+    assert "shorter paper" not in response.json()["detail"]
+    assert [provider for provider, _ in calls] == ["gemini", "groq", "openrouter"]
+    assert document_id in documents
+    assert "summary" not in documents[document_id]
+
+
 def test_413_does_not_stop_a_later_summary_from_succeeding(client, make_pdf, mock_providers):
     # The 413 must not be cached or remembered as a permanent failure.
     calls = mock_providers(gemini=413, groq=413, openrouter=413)
