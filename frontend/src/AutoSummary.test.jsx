@@ -87,7 +87,11 @@ it("shows automatic loading and rejects repeated manual clicks during generation
   await screen.findByText(paper.preview);
   const button = screen.getByRole("button", { name: "Generating summary…" });
   expect(button.disabled).toBe(true);
-  expect(screen.getByText(/Reading your paper and connecting its ideas/)).toBeTruthy();
+  const summaryStatus = screen.getByText(/You can ask questions about your paper while you wait/)
+    .closest('[role="status"]');
+  expect(summaryStatus).not.toBeNull();
+  expect(summaryStatus.closest('[aria-busy="true"]')).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Your question" }).disabled).toBe(false);
   fireEvent.click(button); fireEvent.click(button);
   expect(summaries()).toHaveLength(1);
   await act(async () => pending.resolve(ok(summary)));
