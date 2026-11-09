@@ -121,16 +121,22 @@ describe("Grounded paper Q&A", () => {
     await openPaper();
     const pending = deferred();
     fetch.mockReturnValueOnce(pending.promise);
-    send();
-    expect(screen.getByText(/Finding supporting passages and preparing/)).toBeTruthy();
     const input = screen.getByRole("textbox", { name: "Your question" });
-    expect(input.disabled).toBe(true);
+    input.focus();
+    fireEvent.change(input, { target: { value: "What is the main result?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText(/Finding supporting passages and preparing/)).toBeTruthy();
+    expect(input.disabled).toBe(false);
+    expect(input.readOnly).toBe(true);
+    expect(document.activeElement).toBe(input);
     expect(screen.getByRole("button", { name: "Preparing answer…" }).disabled).toBe(true);
     fireEvent.submit(input.closest("form"));
     fireEvent.submit(input.closest("form"));
     expect(fetch).toHaveBeenCalledTimes(3);
     await act(async () => pending.resolve(ok(answer)));
     expect(screen.getByText(answer.answer)).toBeTruthy();
+    expect(input.readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
   });
 
   it("shows provider failure honestly and retries the same turn", async () => {

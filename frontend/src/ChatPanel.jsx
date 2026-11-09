@@ -411,7 +411,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
     }
   }
 
-  const isInputDisabled = !document || isUploading || isSending;
+  const isInputDisabled = !document || isUploading;
 
   return (
     <section className="card chat-card" id="paper-chat" aria-labelledby="chat-title">
@@ -468,6 +468,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
           rows={3}
           maxLength={MAX_QUESTION_CHARACTERS}
           disabled={isInputDisabled}
+          readOnly={isSending}
           placeholder="What would you like to understand about this paper?"
           aria-describedby="chat-input-help"
           onChange={(event) => {
@@ -484,7 +485,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
           <button
             type="submit"
             className="button button-primary"
-            disabled={isInputDisabled || !question.trim()}
+            disabled={isInputDisabled || isSending || !question.trim()}
           >
             {isSending ? "Preparing answer…" : "Send question"}
           </button>

@@ -345,7 +345,7 @@ export default function App() {
       <SkipLink />
       <SiteHeader />
 
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <IntroSection />
 
         <div className="workspace-grid">
