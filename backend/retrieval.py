@@ -101,16 +101,16 @@ DEFINITION_QUESTION = re.compile(r"(?:what is|what are|what's|define|meaning of)
 # Questions about the paper as a whole, rather than about something inside it.
 #
 # These need their own handling because the words that make them meaningful to a person
-# ("topic", "about") never appear in a research paper, so word matching scores zero no
-# matter how well the paper answers the question. Every phrase mentions the paper or the
-# document, which keeps unrelated questions from matching by accident.
-OVERVIEW_PHRASES = (
-    "main topic", "overall topic", "research problem",
-    "this paper about", "the paper about", "this document about", "this study about",
-    "problem does this paper", "problem does the paper", "problem this paper",
-    "what is this paper", "what does this paper study",
-    "what does this paper investigate", "what does this paper propose",
-    "summarize this paper", "summarise this paper",
+# ("topic", "about") may not appear in the text. Match complete questions so a
+# specific or unrelated question cannot get opening passages just by using these words.
+PAPER_REFERENCE = r"(?:this|the|my) (?:research paper|paper|document|study|pdf)"
+OVERVIEW_QUESTION = re.compile(
+    rf"(?:(?:what is|what's) (?:the )?)?(?:main topic|overall topic|research problem)"
+    rf"(?: (?:of|in) {PAPER_REFERENCE})?"
+    rf"|(?:what is|what's) {PAPER_REFERENCE}(?: about)?"
+    rf"|what (?:research )?problem does {PAPER_REFERENCE} (?:address|solve|study|investigate|tackle)"
+    rf"|what does {PAPER_REFERENCE} (?:study|investigate|propose)"
+    rf"|(?:please )?summari[sz]e {PAPER_REFERENCE}"
 )
 
 # Words people use when asking about research, mapped to the words papers really use.
@@ -378,10 +378,7 @@ def asks_for_paper_overview(normalized_question: str) -> bool:
     Used to send those questions straight to the paper's opening chunks, because the
     abstract is where a paper states both its topic and the problem it tackles.
     """
-    for phrase in OVERVIEW_PHRASES:
-        if phrase in normalized_question:
-            return True
-    return False
+    return OVERVIEW_QUESTION.fullmatch(normalized_question) is not None
 
 
 def question_names_something_absent(question_words: Counter, index: dict) -> bool:

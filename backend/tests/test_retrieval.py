@@ -195,6 +195,8 @@ def test_specific_questions_still_rank_the_correct_page_first(question, expected
     "How do I fix my car engine?",
     "method for baking croissants",
     "What is the best recipe for pizza dough?",
+    "What is the main topic of this paper about diesel engines?",
+    "What research problem does this paper address about lunar tourism?",
 ])
 def test_unrelated_questions_still_retrieve_nothing_from_a_real_paper(question):
     # The honest insufficient-evidence path must survive the broader retrieval, so that
@@ -229,6 +231,7 @@ def test_related_words_are_added_without_changing_the_original_question():
     ("What is this paper about?", True),
     ("What is scaled dot-product attention?", False),
     ("How do I bake sourdough bread?", False),
+    ("What does this paper propose about lunar tourism?", False),
 ])
 def test_overview_questions_are_recognised_without_matching_unrelated_ones(question, expected):
     normalized = " ".join(question.casefold().split()).rstrip("?.!")
