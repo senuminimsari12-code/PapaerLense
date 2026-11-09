@@ -8,8 +8,10 @@
 // It renders one of two things: the document, or an empty placeholder.
 
 import Icon from "./Icon.jsx";
+import { useTranslation } from "./interfacePreferences.jsx";
 
 function EmptyPreview({ isUploading }) {
+  const t = useTranslation();
   // The decorative paper illustration shown before anything is uploaded.
   return (
     <div className="preview-empty">
@@ -30,33 +32,34 @@ function EmptyPreview({ isUploading }) {
         </div>
       </div>
       <h3>
-        {isUploading ? "A little clarity is on its way" : "Your paper, at a glance"}
+        {t(isUploading ? "A little clarity is on its way" : "Your paper, at a glance")}
       </h3>
       <p>
-        {isUploading
+        {t(isUploading
           ? "Your real document preview will appear once extraction finishes."
-          : "Upload a PDF to see its page count and a preview of the extracted text."}
+          : "Upload a PDF to see its page count and a preview of the extracted text.")}
       </p>
       <span className="empty-label">
         <span />
-        {isUploading
+        {t(isUploading
           ? "Extracting your document"
-          : "A clear starting point for your research"}
+          : "A clear starting point for your research")}
       </span>
     </div>
   );
 }
 
 export default function DocumentPreview({ document, isUploading }) {
+  const t = useTranslation();
   return (
     <section className="card preview-card" aria-labelledby="preview-title">
       <div className="preview-heading">
         <div>
-          <p className="card-eyebrow">02 / TAKE A CLOSER LOOK</p>
-          <h2 id="preview-title">Document preview</h2>
+          <p className="card-eyebrow">{t("02 / TAKE A CLOSER LOOK")}</p>
+          <h2 id="preview-title">{t("Document preview")}</h2>
         </div>
         <span className={`preview-badge ${document ? "ready" : ""}`}>
-          {document ? "Text extracted" : "Awaiting your paper"}
+          {t(document ? "Text extracted" : "Awaiting your paper")}
         </span>
       </div>
 
@@ -64,37 +67,33 @@ export default function DocumentPreview({ document, isUploading }) {
         <div className="document-content">
           <dl className="document-stats">
             <div>
-              <dt>Pages</dt>
+              <dt>{t("Pages")}</dt>
               {/* toLocaleString adds thousands separators, e.g. 44609 -> "44,609". */}
               <dd>{document.page_count.toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Characters</dt>
+              <dt>{t("Characters")}</dt>
               <dd>{document.character_count.toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Format</dt>
+              <dt>{t("Format")}</dt>
               <dd>PDF</dd>
             </div>
           </dl>
           <div className="text-preview-heading">
             <span>
-              <Icon name="text" size={16} /> EXTRACTED TEXT
-            </span>
-            <span>First 4,000 characters max.</span>
+              <Icon name="text" size={16} />{" "}{t("EXTRACTED TEXT")}</span>
+            <span>{t("First 4,000 characters max.")}</span>
           </div>
           {/*
             <pre> keeps the line breaks exactly as the PDF had them, which matters for
             judging whether extraction worked. tabIndex={0} lets a keyboard user focus
             this box so they can scroll it with the arrow keys.
           */}
-          <pre className="text-preview" tabIndex={0} aria-label="Extracted text preview">
+          <pre className="text-preview" tabIndex={0} aria-label={t("Extracted text preview")}>
             {document.preview}
           </pre>
-          <p className="preview-footnote">
-            Original page numbers are preserved. Reading order may vary in complex
-            layouts.
-          </p>
+          <p className="preview-footnote">{t("Original page numbers are preserved. Reading order may vary in complex layouts.")}</p>
         </div>
       ) : (
         <EmptyPreview isUploading={isUploading} />

@@ -25,6 +25,8 @@
 // for "is a request already running?" and "is this response still wanted?".
 
 import { useRef, useState } from "react";
+import { InterfacePreferences } from "./interfacePreferences.jsx";
+import { apiErrorMessage } from "./translations.js";
 
 import ChatPanel from "./ChatPanel.jsx";
 import DocumentPreview from "./DocumentPreview.jsx";
@@ -123,6 +125,14 @@ function isCompleteSummaryResult(result, expectedDocumentId) {
 }
 
 export default function App() {
+  return (
+    <InterfacePreferences>
+      {(preferences) => <Workspace preferences={preferences} />}
+    </InterfacePreferences>
+  );
+}
+
+function Workspace({ preferences }) {
   // What the user sees.
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadedDocument, setUploadedDocument] = useState(null);
@@ -217,11 +227,7 @@ export default function App() {
       if (!response.ok) {
         // FastAPI puts its error text in "detail". Throwing here sends it to the catch
         // block below, which displays it.
-        throw new Error(
-          typeof result?.detail === "string"
-            ? result.detail
-            : "The PDF could not be processed. Please try another file.",
-        );
+        throw apiErrorMessage(result?.detail, response.status, "upload");
       }
 
       if (!isCompleteUploadResult(result)) {
@@ -242,7 +248,7 @@ export default function App() {
       generateSummary(result);
     } catch (uploadError) {
       setError(
-        describeRequestFailure(uploadError, {
+        uploadError?.operation ? uploadError : describeRequestFailure(uploadError, {
           timedOut: "Processing took too long. Please try again with a smaller PDF.",
           unreachable:
             "Could not reach PaperLense. Check that the backend is running at the configured API address, then try again.",
@@ -301,11 +307,7 @@ export default function App() {
       }
 
       if (!response.ok) {
-        throw new Error(
-          typeof result?.detail === "string"
-            ? result.detail
-            : "The summary could not be generated. Please try again.",
-        );
+        throw apiErrorMessage(result?.detail, response.status, "summary");
       }
 
       if (!isCompleteSummaryResult(result, documentId)) {
@@ -321,7 +323,7 @@ export default function App() {
       }
 
       setSummaryError(
-        describeRequestFailure(summaryFailure, {
+        summaryFailure?.operation ? summaryFailure : describeRequestFailure(summaryFailure, {
           timedOut: "Summary generation took too long. Please try again.",
           unreachable:
             "Could not reach PaperLense. Check the backend connection and try again.",
@@ -343,7 +345,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <SkipLink />
-      <SiteHeader />
+      <SiteHeader preferences={preferences} />
 
       <main id="main" tabIndex={-1}>
         <IntroSection />

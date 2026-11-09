@@ -12,6 +12,8 @@
 // display an answer with a page reference we could not verify.
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "./interfacePreferences.jsx";
+import { apiErrorMessage } from "./translations.js";
 
 const MAX_QUESTION_CHARACTERS = 1000;
 
@@ -193,10 +195,11 @@ function isValidAnswer(result, document) {
 // One question-and-answer pair. A turn is in exactly one of three states: still
 // loading, finished with a result, or failed with an error.
 function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
+  const t = useTranslation();
   return (
     <li>
       <div className="chat-message chat-user">
-        <p className="message-label">You</p>
+        <p className="message-label">{t("You")}</p>
         <p className="message-text">{turn.question}</p>
       </div>
       <div className="chat-message chat-assistant">
@@ -205,21 +208,23 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
         {turn.result ? (
           <>
             {turn.result.insufficient_evidence && (
-              <span className="evidence-note">Not enough evidence</span>
+              <span className="evidence-note">{t("Not enough evidence")}</span>
             )}
             {turn.result.context_question && (
               <p className="chat-context">
-                Following up on: {turn.result.context_question}
+                {t("Following up on: {question}", { question: turn.result.context_question })}
               </p>
             )}
-            <p className="message-text">{turn.result.answer}</p>
+            <p className="message-text">
+              {turn.result.insufficient_evidence ? t(turn.result.answer) : turn.result.answer}
+            </p>
             {turn.result.sources.length > 0 && (
               <details className="chat-sources">
-                <summary>Supporting passages ({turn.result.sources.length})</summary>
+                <summary>{t("Supporting passages ({count})", { count: turn.result.sources.length })}</summary>
                 {turn.result.sources.map((source) => (
                   <figure className="source-passage" key={source.chunk_id}>
                     <figcaption>
-                      Source excerpt · <strong>Page {source.page_number}</strong>
+                      {t("Source excerpt")} · <strong>{t("Page {number}", { number: source.page_number })}</strong>
                     </figcaption>
                     <blockquote>{source.excerpt}</blockquote>
                   </figure>
@@ -229,8 +234,8 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
           </>
         ) : turn.error ? (
           <div className="chat-error" role="alert">
-            <strong>We couldn’t prepare an answer</strong>
-            <p>{turn.error}</p>
+            <strong>{t("We couldn’t prepare an answer")}</strong>
+            <p>{t(turn.error)}</p>
             {/* Retry is offered only on the most recent turn, so the conversation
                 cannot be rewritten from the middle. */}
             {isLastTurn && (
@@ -239,16 +244,12 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
                 className="button button-secondary"
                 disabled={isSending}
                 onClick={onRetry}
-              >
-                Retry answer
-              </button>
+              >{t("Retry answer")}</button>
             )}
           </div>
         ) : (
           <p className="chat-loading" role="status">
-            <span className="spinner" /> Finding supporting passages and preparing an
-            answer…
-          </p>
+            <span className="spinner" />{" "}{t("Finding supporting passages and preparing an answer…")}</p>
         )}
       </div>
     </li>
@@ -256,6 +257,7 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
 }
 
 export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
+  const t = useTranslation();
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState([]);
   const [isSending, setIsSending] = useState(false);
@@ -347,11 +349,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
       }
 
       if (!response.ok) {
-        throw new Error(
-          typeof result?.detail === "string"
-            ? result.detail
-            : "The question could not be answered. Check its length and try again.",
-        );
+        throw apiErrorMessage(result?.detail, response.status, "chat");
       }
 
       // Verify every citation before displaying anything.
@@ -371,14 +369,14 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
       setStatus(
         result.insufficient_evidence
           ? "No supporting evidence was found for this question."
-          : `Answer ready with ${result.sources.length} supporting passages.`,
+          : { message: "Answer ready with {count} supporting passages.", count: result.sources.length },
       );
     } catch (failure) {
       if (request.current !== controller) {
         return;
       }
 
-      let message = failure.message;
+      let message = failure?.operation ? failure : failure.message;
       if (failure.name === "AbortError") {
         message = "The answer took too long. Please try again.";
       } else if (failure instanceof TypeError) {
@@ -417,35 +415,29 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
     <section className="card chat-card" id="paper-chat" aria-labelledby="chat-title">
       <div className="summary-header">
         <div>
-          <p className="card-eyebrow">04 / FOLLOW YOUR CURIOSITY</p>
-          <h2 id="chat-title">Ask your paper</h2>
-          <p className="card-description">
-            A conversation with the evidence, one question at a time.
-          </p>
+          <p className="card-eyebrow">{t("04 / FOLLOW YOUR CURIOSITY")}</p>
+          <h2 id="chat-title">{t("Ask your paper")}</h2>
+          <p className="card-description">{t("A conversation with the evidence, one question at a time.")}</p>
         </div>
-        <span className="chat-badge">Answers with page references</span>
+        <span className="chat-badge">{t("Answers with page references")}</span>
       </div>
 
-      <p className="chat-privacy">
-        PaperLense finds relevant passages locally. To generate an answer, it sends your
-        question and those passages to configured providers as needed, in order from
-        Gemini to Groq to OpenRouter.
-      </p>
+      <p className="chat-privacy">{t("PaperLense finds relevant passages locally. To generate an answer, it sends your question and those passages to configured providers as needed, in order from Gemini to Groq to OpenRouter.")}</p>
 
       {turns.length === 0 ? (
         <div className="chat-empty">
           <span aria-hidden="true">?</span>
           <div>
-            <h3>A question is a good place to start.</h3>
+            <h3>{t("A question is a good place to start.")}</h3>
             <p>
-              {document
+              {t(document
                 ? "Ask about the research question, methods, or results. We’ll look for supporting passages first."
-                : "Upload a paper above to start a document-grounded conversation."}
+                : "Upload a paper above to start a document-grounded conversation.")}
             </p>
           </div>
         </div>
       ) : (
-        <ol className="chat-history" aria-label="Conversation about the current paper">
+        <ol className="chat-history" aria-label={t("Conversation about the current paper")}>
           {turns.map((turn, index) => (
             <ChatTurn
               key={turn.id}
@@ -459,7 +451,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
       )}
 
       <form className="chat-form" onSubmit={sendQuestion} aria-busy={isSending}>
-        <label htmlFor="paper-question">Your question</label>
+        <label htmlFor="paper-question">{t("Your question")}</label>
         <textarea
           id="paper-question"
           // value + onChange makes this a "controlled input": React state is the single
@@ -469,7 +461,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
           maxLength={MAX_QUESTION_CHARACTERS}
           disabled={isInputDisabled}
           readOnly={isSending}
-          placeholder="What would you like to understand about this paper?"
+          placeholder={t("What would you like to understand about this paper?")}
           aria-describedby="chat-input-help"
           onChange={(event) => {
             setQuestion(event.target.value);
@@ -478,8 +470,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
           onKeyDown={handleKeyDown}
         />
         <div className="chat-form-footer">
-          <p id="chat-input-help">
-            Enter to send · Shift + Enter for a new line{" "}
+          <p id="chat-input-help">{t("Enter to send · Shift + Enter for a new line")}{" "}
             <span>{question.length}/1,000</span>
           </p>
           <button
@@ -487,25 +478,21 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
             className="button button-primary"
             disabled={isInputDisabled || isSending || !question.trim()}
           >
-            {isSending ? "Preparing answer…" : "Send question"}
+            {t(isSending ? "Preparing answer…" : "Send question")}
           </button>
         </div>
         {inputError && (
           <p className="chat-input-error" role="alert">
-            {inputError}
+            {t(inputError)}
           </p>
         )}
       </form>
 
-      <p className="chat-footnote">
-        Answers use retrieved text, not the full paper. Check the cited passages against
-        the original. This workspace keeps the latest 12 questions; replacing the PDF
-        clears the conversation.
-      </p>
+      <p className="chat-footnote">{t("Answers use retrieved text, not the full paper. Check the cited passages against the original. This workspace keeps the latest 12 questions; replacing the PDF clears the conversation.")}</p>
 
       {/* Visually hidden, but screen readers announce changes to it. */}
       <p className="visually-hidden" role="status" aria-live="polite">
-        {status}
+        {typeof status === "string" ? t(status) : t(status.message, { count: status.count })}
       </p>
     </section>
   );

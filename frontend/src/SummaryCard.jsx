@@ -8,6 +8,7 @@
 // button calls onGenerateSummary().
 
 import Icon from "./Icon.jsx";
+import { useTranslation } from "./interfacePreferences.jsx";
 
 // The five sections, in the exact order they are displayed. Each entry is
 // [key in the backend's JSON, heading shown to the user].
@@ -31,6 +32,7 @@ export default function SummaryCard({
   isUploading,
   onGenerateSummary,
 }) {
+  const t = useTranslation();
   // The button says "Retry summary" after a failure and "Generate Summary" otherwise.
   const generateButtonLabel = summaryError ? "Retry summary" : "Generate Summary";
 
@@ -42,16 +44,13 @@ export default function SummaryCard({
     >
       <div className="summary-header">
         <div>
-          <p className="card-eyebrow">03 / CONNECT THE IDEAS</p>
-          <h2 id="summary-title">Your paper, understood</h2>
-          <p className="card-description">
-            Five focused sections. One clearer picture of the research.
-          </p>
+          <p className="card-eyebrow">{t("03 / CONNECT THE IDEAS")}</p>
+          <h2 id="summary-title">{t("Your paper, understood")}</h2>
+          <p className="card-description">{t("Five focused sections. One clearer picture of the research.")}</p>
         </div>
         {summary ? (
           <span className="summary-ready">
-            <Icon name="check" size={17} /> Summary ready
-          </span>
+            <Icon name="check" size={17} />{" "}{t("Summary ready")}</span>
         ) : (
           <button
             type="button"
@@ -63,12 +62,11 @@ export default function SummaryCard({
           >
             {isSummarizing ? (
               <>
-                <span className="spinner" /> Generating summary…
-              </>
+                <span className="spinner" />{" "}{t("Generating summary…")}</>
             ) : (
               <>
                 <Icon name="book" size={18} />
-                {generateButtonLabel}
+                {t(generateButtonLabel)}
               </>
             )}
           </button>
@@ -76,34 +74,29 @@ export default function SummaryCard({
       </div>
 
       {!summary && (
-        <p className="summary-privacy">
-          Summaries try Gemini first, then Groq and OpenRouter in that order when
-          configured and needed. If generation fails, you can retry here.
-        </p>
+        <p className="summary-privacy">{t("Summaries try Gemini first, then Groq and OpenRouter in that order when configured and needed. If generation fails, you can retry here.")}</p>
       )}
 
       {summaryError && (
         <div className="error-message summary-error" role="alert">
           <Icon name="alert" size={20} />
           <div>
-            <strong>We couldn’t generate the summary</strong>
-            <p>{summaryError}</p>
+            <strong>{t("We couldn’t generate the summary")}</strong>
+            <p>{t(summaryError)}</p>
           </div>
         </div>
       )}
 
       <div className="summary-status" role="status" aria-atomic="true">
         {isSummarizing && (
-          <p className="summary-loading">
-            Generating a summary from the extracted text. This can take up to 90 seconds.
-            You can ask questions about your paper while you wait.
-          </p>
+          <p className="summary-loading">{t("Generating a summary from the extracted text. This can take up to 90 seconds. You can ask questions about your paper while you wait.")}</p>
         )}
         {summary && (
           <p className="summary-source">
-            Summary generated for {document.filename}. Based on the extracted text from{" "}
-            {summary.source_page_count}{" "}
-            {summary.source_page_count === 1 ? "page" : "pages"}.
+            {t(summary.source_page_count === 1
+              ? "Summary generated for {file}. Based on the extracted text from {count} page."
+              : "Summary generated for {file}. Based on the extracted text from {count} pages.",
+            { file: document.filename, count: summary.source_page_count })}
           </p>
         )}
       </div>
@@ -120,15 +113,15 @@ export default function SummaryCard({
                 <div className="summary-section-heading">
                   {/* padStart turns 1 into "01", so the numbers line up. */}
                   <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                  <h3 id={`summary-${key}`}>{heading}</h3>
+                  <h3 id={`summary-${key}`}>{t(heading)}</h3>
                 </div>
                 <p>{summary.summary[key]}</p>
               </section>
             ))}
           </div>
           <p className="summary-footnote">
-            AI-generated from extracted text using {summary.model}. Check important
-            details against the original paper; figures and images are not analyzed.
+            {t("AI-generated from extracted text using {model}. Check important details against the original paper; figures and images are not analyzed.",
+              { model: summary.model })}
           </p>
         </>
       ) : (
@@ -139,9 +132,9 @@ export default function SummaryCard({
           <div className="summary-empty">
             <Icon name="book" size={23} />
             <p>
-              {document
+              {t(document
                 ? "Your paper is ready. Its summary will explore the question, methods, findings, and conclusions."
-                : "Upload a paper above. Its structured summary will start automatically."}
+                : "Upload a paper above. Its structured summary will start automatically.")}
             </p>
           </div>
         )
