@@ -97,6 +97,7 @@ TITLE_QUESTION = re.compile(
 
 # Matches "what is X" style questions, so we can treat X as the thing being defined.
 DEFINITION_QUESTION = re.compile(r"(?:what is|what are|what's|define|meaning of) (.+)")
+PAGE_REFERENCE = re.compile(r"\bpage\s+([0-9]+)\b", re.IGNORECASE)
 
 # Questions about the paper as a whole, rather than about something inside it.
 #
@@ -476,10 +477,10 @@ def select_best_chunks(scored_chunks: list[tuple], limit: int) -> list[dict]:
     return selected_chunks
 
 
-def retrieve_chunks(index: dict, question: str) -> list[dict]:
+def retrieve_chunks(index: dict, question: str, page_numbers: set[int] | None = None) -> list[dict]:
     """Return up to four chunks that best match the question, best first.
 
-    Input:  the index built for one document, and the user's question.
+    Input:  the index for one document, the search text, and any explicitly requested pages.
     Output: the chosen chunks, or an empty list when nothing is relevant enough.
 
     An empty list is a meaningful answer, not a failure: the caller then tells the user
@@ -492,6 +493,23 @@ def retrieve_chunks(index: dict, question: str) -> list[dict]:
       4. If step 3 found nothing, a second attempt accepts weaker but still
          word-matched chunks above FALLBACK_MIN_SIMILARITY.
     """
+    if page_numbers:
+        # Keep the original IDs, vectors, and vocabulary, but search only those pages.
+        chunks = []
+        vectors = []
+        for chunk, vector in zip(index["chunks"], index["vectors"]):
+            if chunk["page_number"] in page_numbers:
+                chunks.append(chunk)
+                vectors.append(vector)
+        index = {**index, "chunks": chunks, "vectors": vectors}
+        question = PAGE_REFERENCE.sub(" ", question)
+        overview_words = {
+            "summarize", "summarise", "say", "cover", "discuss", "content",
+            "overview", "mention", "contain", "include", "show",
+        }
+        if set(tokenize(question)) <= overview_words:
+            return select_best_chunks([(0, chunk) for chunk in chunks], MAX_RETRIEVED_CHUNKS)
+
     normalized_question = " ".join(question.casefold().split()).rstrip("?.!")
 
     # Step 1: "what is the title of this paper?". A title sits at the very start of a
