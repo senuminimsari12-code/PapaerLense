@@ -7,7 +7,6 @@ from backend.main import app, documents
 from backend import gemini_client
 
 REAL_GEMINI_CLIENT = gemini_client.genai.Client
-REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +46,11 @@ def mock_gemini(monkeypatch):
             return httpx.Response(status, json=body)
 
         def client(**options):
-            options["http_options"].httpx_async_client = REAL_ASYNC_CLIENT(transport=httpx.MockTransport(respond))
+            http_options = options["http_options"]
+            http_options.async_client_args = {
+                **(http_options.async_client_args or {}),
+                "transport": httpx.MockTransport(respond),
+            }
             return REAL_GEMINI_CLIENT(**options)
 
         monkeypatch.setattr(gemini_client.genai, "Client", client)

@@ -229,6 +229,22 @@ def test_provider_non_json_body_is_safe(client, make_pdf, mock_provider):
     assert "unreadable response" in response.json()["detail"]
 
 
+def test_gemini_does_not_forward_credentials_or_paper_on_redirect(client, make_pdf, mock_provider):
+    async def redirect(request):
+        if request.url.host == "generativelanguage.googleapis.com":
+            return httpx.Response(307, headers={"Location": "https://untrusted.example/redirect"})
+        return httpx.Response(200, json=provider_payload())
+
+    requests = mock_provider(handler=redirect)
+    document_id = upload(client, make_pdf)
+    response = client.post(f"/api/documents/{document_id}/summary")
+
+    assert [request.url.host for request in requests] == ["generativelanguage.googleapis.com"]
+    assert requests[0].headers["x-goog-api-key"] == "unit-test-not-a-real-key"
+    assert response.status_code == 502
+    assert "untrusted.example" not in response.text
+
+
 def test_thinking_is_not_exposed_and_fragmented_json_is_joined(client, make_pdf, mock_provider):
     text = json.dumps(TEST_SUMMARY)
     payload = {"candidates": [{"finishReason": "STOP", "content": {"parts": [
