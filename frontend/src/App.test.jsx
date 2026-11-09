@@ -223,6 +223,16 @@ describe("PaperLense upload flow", () => {
     await screen.findByText("Page 1 Original research preview");
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("reports an HTTP upload failure when the JSON error body is null", async () => {
+    fetch.mockResolvedValueOnce({ ok: false, json: async () => null });
+    render(<App />);
+    choose();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The PDF could not be processed.");
+    expect(screen.queryByLabelText("Extracted text preview")).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 it("formats byte, KB and MB sizes for people", () => {

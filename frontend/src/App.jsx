@@ -218,7 +218,7 @@ export default function App() {
         // FastAPI puts its error text in "detail". Throwing here sends it to the catch
         // block below, which displays it.
         throw new Error(
-          typeof result.detail === "string"
+          typeof result?.detail === "string"
             ? result.detail
             : "The PDF could not be processed. Please try another file.",
         );
