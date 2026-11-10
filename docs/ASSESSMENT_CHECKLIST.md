@@ -32,4 +32,4 @@ Tested versions were Python 3.14.6 on Windows, Python 3.14.4 on WSL, Node 24.19.
 
 ## Assessment handoff
 
-Use the [README setup instructions](../README.md#run-on-windows-powershell) and the [developer handover](DEVELOPER_HANDOVER.md). For a live AI demonstration, configure at least one backend provider and use a public PDF with selectable text. Show the extracted preview, all five summary sections, and a cited answer with its supporting passage. The current evidence supports a local assessment setup and leaves provider availability and live answer quality for that demonstration.
+Use the [README setup instructions](../README.md#run-locally). For a live AI demonstration, configure at least one backend provider and use a public PDF with selectable text. Show the extracted preview, all five summary sections, and a cited answer with its supporting passage. The current evidence supports a local assessment setup and leaves provider availability and live answer quality for that demonstration.

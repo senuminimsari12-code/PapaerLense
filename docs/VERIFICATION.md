@@ -15,7 +15,7 @@ Verified on 29 October 2026. Scope: upload, PDF validation/extraction, temporary
 | `backend/pdf_processing.py` | PDF validation, numbered page extraction and bounded preview |
 | `backend/tests/` | Programmatically generated PDFs, processing and endpoint tests |
 | `backend/requirements.txt`, `pytest.ini` | Pinned direct backend dependencies and test discovery |
-| `README.md`, `docs/INTERVIEW_GUIDE.md` | Windows/WSL setup, API contract, limitations and code explanations |
+| `README.md` | Windows/WSL setup, API contract, limitations and code explanations |
 | `.gitignore`, `.gitattributes`, `.env.example` | Generated-file exclusions, line endings and optional public configuration |
 
 ## Features implemented
@@ -74,7 +74,6 @@ React sends one file in `FormData`. FastAPI limits the request and file size, va
 
 ## Interview preparation
 
-[INTERVIEW_GUIDE.md](INTERVIEW_GUIDE.md) explains the inputs, outputs and purpose of `uploadFiles`, `handleDrop`, `formatFileSize`, `UploadBodyLimit`, `read_limited_file`, `extract_pdf`, `upload_pdf`, and the error/CORS/store decisions. Be ready to explain why client-side validation is insufficient, why multipart boundaries are browser-managed, why page numbers survive blank pages, and why memory state disappears on restart.
 
 ## Remaining limits and unverified behavior
 
