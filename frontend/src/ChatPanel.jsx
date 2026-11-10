@@ -192,10 +192,30 @@ function isValidAnswer(result, document) {
   return citationsMatchSources(citations, sourcePages);
 }
 
+function CitedAnswer({ answer, onOpenPage }) {
+  const parts = [];
+  let end = 0;
+  // This runs only after isValidAnswer has matched every marker to a real source.
+  for (const match of answer.matchAll(PAGE_CITATION_PATTERN)) {
+    const [marker, page] = match;
+    parts.push(answer.slice(end, match.index));
+    parts.push(
+      <button key={match.index} type="button" className="page-citation"
+        aria-controls="document-preview" onClick={() => onOpenPage(Number(page))}>
+        {marker}
+      </button>,
+    );
+    end = match.index + marker.length;
+  }
+  parts.push(answer.slice(end));
+  return parts;
+}
+
 // One question-and-answer pair. A turn is in exactly one of three states: still
 // loading, finished with a result, or failed with an error.
-function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
+function ChatTurn({ turn, isLastTurn, isSending, onRetry, onOpenCitation }) {
   const t = useTranslation();
+  const openPage = (page) => onOpenCitation(turn.result.document_id, page);
   return (
     <li>
       <div className="chat-message chat-user">
@@ -216,7 +236,9 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
               </p>
             )}
             <p className="message-text">
-              {turn.result.insufficient_evidence ? t(turn.result.answer) : turn.result.answer}
+              {turn.result.insufficient_evidence
+                ? t(turn.result.answer)
+                : <CitedAnswer answer={turn.result.answer} onOpenPage={openPage} />}
             </p>
             {turn.result.sources.length > 0 && (
               <details className="chat-sources">
@@ -224,7 +246,10 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
                 {turn.result.sources.map((source) => (
                   <figure className="source-passage" key={source.chunk_id}>
                     <figcaption>
-                      {t("Source excerpt")} · <strong>{t("Page {number}", { number: source.page_number })}</strong>
+                      {t("Source excerpt")} · <button type="button" className="page-citation"
+                        aria-controls="document-preview" onClick={() => openPage(source.page_number)}>
+                        <strong>{t("Page {number}", { number: source.page_number })}</strong>
+                      </button>
                     </figcaption>
                     <blockquote>{source.excerpt}</blockquote>
                   </figure>
@@ -256,7 +281,7 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry }) {
   );
 }
 
-export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
+export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCitation }) {
   const t = useTranslation();
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState([]);
@@ -440,6 +465,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl }) {
         <ol className="chat-history" aria-label={t("Conversation about the current paper")}>
           {turns.map((turn, index) => (
             <ChatTurn
+              onOpenCitation={onOpenCitation}
               key={turn.id}
               turn={turn}
               isLastTurn={index === turns.length - 1}

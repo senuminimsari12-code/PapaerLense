@@ -136,6 +136,7 @@ function Workspace({ preferences }) {
   // What the user sees.
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadedDocument, setUploadedDocument] = useState(null);
+  const [citationPage, setCitationPage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState("");
@@ -169,6 +170,7 @@ function Workspace({ preferences }) {
     // preview and summary while an error message claims the upload failed.
     currentDocument.current = null;
     setUploadedDocument(null);
+    setCitationPage(null);
 
     // Cancel any summary still running for the old document, so its response cannot
     // arrive later and appear to belong to the new one.
@@ -342,6 +344,16 @@ function Workspace({ preferences }) {
     }
   }
 
+  function openCitationPage(documentId, page) {
+    const active = currentDocument.current;
+    if (!active || active.document_id !== documentId ||
+        !Number.isSafeInteger(page) || page < 1 || page > active.page_count) {
+      return;
+    }
+    // A new selection also refocuses the preview when the same citation is clicked.
+    setCitationPage({ page });
+  }
+
   return (
     <div className="app-shell">
       <SkipLink />
@@ -361,7 +373,12 @@ function Workspace({ preferences }) {
             onFilesSelected={uploadFiles}
             onDraggingChange={setIsDragging}
           />
-          <DocumentPreview document={uploadedDocument} isUploading={isUploading} />
+          <DocumentPreview
+            document={uploadedDocument}
+            isUploading={isUploading}
+            file={selectedFile}
+            citationPage={citationPage}
+          />
         </div>
 
         <SummaryCard
@@ -384,6 +401,7 @@ function Workspace({ preferences }) {
           document={uploadedDocument}
           isUploading={isUploading}
           apiBaseUrl={API_BASE_URL}
+          onOpenCitation={openCitationPage}
         />
 
         <FeatureListSection />
