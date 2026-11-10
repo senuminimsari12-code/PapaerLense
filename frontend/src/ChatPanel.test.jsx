@@ -462,4 +462,31 @@ describe("Citation navigation", () => {
     await screen.findByRole("img", { name: "Original PDF page 1" });
     expect(getPage).toHaveBeenCalledExactlyOnceWith(1);
   });
+
+  it("keeps retrieved evidence when settings change and opens pages outside the extracted-text preview", async () => {
+    const { getPage } = mockPdf();
+    await openPaper();
+    fetch.mockResolvedValueOnce(ok({
+      ...answer,
+      evidence: [
+        { ...answer.sources[0], cited: true },
+        { chunk_id: "chunk-2", page_number: 3, excerpt: "An uncited methods excerpt.", cited: false },
+        { chunk_id: "invalid", page_number: 4, excerpt: "Invalid page.", cited: false },
+      ],
+    }));
+    send();
+    const title = await screen.findByText("Evidence Explorer");
+    const details = title.closest("details");
+    expect(details.open).toBe(false);
+    fireEvent.click(title);
+    expect(details.open).toBe(true);
+    expect(screen.getByText("Retrieved, not cited")).toBeTruthy();
+    expect(screen.queryByText("Invalid page.")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "ta" } });
+    expect(details.open).toBe(true);
+    expect(screen.getByText("An uncited methods excerpt.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /பக்கம் 3/ }));
+    await screen.findByRole("img", { name: "அசல் PDF கோப்பின் பக்கம் 3" });
+    expect(getPage).toHaveBeenCalledExactlyOnceWith(3);
+  });
 });

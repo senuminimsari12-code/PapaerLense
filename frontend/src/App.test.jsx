@@ -79,6 +79,14 @@ describe("PaperLense upload flow", () => {
     expect(options.headers).toBeUndefined();
   });
 
+  it("keeps the header help link usable after the empty-state introduction is removed", async () => {
+    render(<App />);
+    await uploadFirstDocument();
+    expect(screen.queryByRole("heading", { name: "Research paper workspace" })).toBeNull();
+    const helpLink = screen.getByRole("link", { name: /how it works/i });
+    expect(document.querySelector(helpLink.getAttribute("href"))).toBeTruthy();
+  });
+
   it("clears old text immediately and prevents repeated submissions while processing", async () => {
     render(<App />);
     await uploadFirstDocument();

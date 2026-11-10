@@ -12,6 +12,7 @@
 // display an answer with a page reference we could not verify.
 
 import { useEffect, useRef, useState } from "react";
+import EvidenceExplorer from "./EvidenceExplorer.jsx";
 import { useTranslation } from "./interfacePreferences.jsx";
 import { apiErrorMessage } from "./translations.js";
 
@@ -213,7 +214,7 @@ function CitedAnswer({ answer, onOpenPage }) {
 
 // One question-and-answer pair. A turn is in exactly one of three states: still
 // loading, finished with a result, or failed with an error.
-function ChatTurn({ turn, isLastTurn, isSending, onRetry, onOpenCitation }) {
+function ChatTurn({ turn, isLastTurn, isSending, onRetry, onOpenCitation, document, language }) {
   const t = useTranslation();
   const openPage = (page) => onOpenCitation(turn.result.document_id, page);
   return (
@@ -240,7 +241,14 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry, onOpenCitation }) {
                 ? t(turn.result.answer)
                 : <CitedAnswer answer={turn.result.answer} onOpenPage={openPage} />}
             </p>
-            {turn.result.sources.length > 0 && (
+            <EvidenceExplorer
+              evidence={turn.result.evidence}
+              document={document}
+              language={language}
+              insufficientEvidence={turn.result.insufficient_evidence}
+              onOpenSourcePage={openPage}
+            />
+            {!Array.isArray(turn.result.evidence) && turn.result.sources.length > 0 && (
               <details className="chat-sources">
                 <summary>{t("Supporting passages ({count})", { count: turn.result.sources.length })}</summary>
                 {turn.result.sources.map((source) => (
@@ -281,7 +289,7 @@ function ChatTurn({ turn, isLastTurn, isSending, onRetry, onOpenCitation }) {
   );
 }
 
-export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCitation }) {
+export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCitation, language }) {
   const t = useTranslation();
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState([]);
@@ -466,6 +474,8 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCit
           {turns.map((turn, index) => (
             <ChatTurn
               onOpenCitation={onOpenCitation}
+              document={document}
+              language={language}
               key={turn.id}
               turn={turn}
               isLastTurn={index === turns.length - 1}
