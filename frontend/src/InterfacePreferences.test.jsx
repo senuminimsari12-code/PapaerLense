@@ -17,6 +17,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  sessionStorage.clear();
   cleanup();
   localStorage.clear();
   root.removeAttribute("data-theme");
@@ -93,7 +94,7 @@ describe("Interface preferences", () => {
     const answer = "The study measured temperature. [Page 1]";
     const excerpt = "The temperature was measured hourly.";
     fetch.mockResolvedValueOnce(ok({
-      document_id: "study", filename: "study.pdf", page_count: 1, character_count: 42,
+      session_id: "s".repeat(43), document_id: "study", filename: "study.pdf", page_count: 1, character_count: 42,
       preview: "Page 1\nUnchanged paper preview",
     })).mockResolvedValueOnce(ok({
       document_id: "study", model: "test-model", source_page_count: 1, source_character_count: 42,

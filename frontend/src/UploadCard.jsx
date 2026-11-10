@@ -190,7 +190,7 @@ export default function UploadCard({
 
       <p className="privacy-note">
         <Icon name="shield" size={16} />
-        <span>{t("Your PDF is processed by the local backend. Only the latest extracted document is kept in memory. A summary starts automatically and sends extracted text to configured providers as needed. Upload only public or non-sensitive papers.")}</span>
+        <span>{t("The backend processes your PDF and keeps extracted text temporarily for this browser session. The automatic summary sends extracted text to configured AI providers. Upload only public or non-sensitive papers.")}</span>
       </p>
     </section>
   );

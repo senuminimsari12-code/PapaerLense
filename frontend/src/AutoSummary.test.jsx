@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import App from "./App.jsx";
 
-const paper = { document_id: "accepted-paper", filename: "paper.pdf", page_count: 2,
+const paper = { session_id: "s".repeat(43), document_id: "accepted-paper", filename: "paper.pdf", page_count: 2,
   character_count: 80, preview: "Accepted research preview" };
 const summary = {
   document_id: paper.document_id, model: "mock-model", source_page_count: 2,
@@ -39,7 +39,7 @@ beforeEach(() => {
     throw new Error("Unexpected API URL in test");
   }));
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { sessionStorage.clear(); cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 it("automatically starts exactly one summary in Strict Mode after upload acceptance", async () => {
   const upload = deferred();
@@ -55,7 +55,7 @@ it("automatically starts exactly one summary in Strict Mode after upload accepta
   expect(url).toBe("http://localhost:8000/api/documents/accepted-paper/summary");
   expect(options.method).toBe("POST");
   expect(options.body).toBeUndefined();
-  expect(options.headers).toBeUndefined();
+  expect(options.headers).toEqual({ "X-PaperLens-Session": paper.session_id });
   expect(screen.getByText(paper.preview)).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Your question" }), { target: { value: "typing" } });
   expect(summaries()).toHaveLength(1);
@@ -65,6 +65,28 @@ it.each([["notes.txt", "text"], ["empty.pdf", ""]])("does not summarize rejected
   render(<App />); choose(name, data);
   expect(screen.getByRole("alert")).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("asks for another upload when a session expires and uses the new token after reupload", async () => {
+  const renewed = { ...paper, document_id: "fresh-document", session_id: "r".repeat(43) };
+  fetch
+    .mockResolvedValueOnce(ok(paper))
+    .mockResolvedValueOnce({
+      ok: false, status: 404,
+      json: async () => ({ detail: "This document is no longer available. Upload the PDF again." }),
+    })
+    .mockResolvedValueOnce(ok(renewed))
+    .mockResolvedValueOnce(ok({ ...summary, document_id: renewed.document_id }));
+
+  const firstVisit = render(<App />);
+  choose();
+  await screen.findByText(/Upload the PDF again/);
+  firstVisit.unmount();
+  render(<App />);
+  choose();
+  await screen.findByText(summary.summary.key_results);
+  expect(fetch.mock.calls[2][1].headers).toEqual({ "X-PaperLens-Session": paper.session_id });
+  expect(fetch.mock.calls[3][1].headers).toEqual({ "X-PaperLens-Session": renewed.session_id });
 });
 
 it.each([

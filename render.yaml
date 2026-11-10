@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: paperlense-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: PYTHON_VERSION
+        value: '3.14.4'
+      - key: PAPERLENS_ALLOWED_ORIGINS
+        value: https://paperlense.vercel.app

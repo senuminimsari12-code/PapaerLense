@@ -319,11 +319,13 @@ def parse_grounded_answer(text: str, passages: list[dict]) -> tuple[GroundedAnsw
     Every failure becomes the same safe ProviderError, so the provider's raw output and
     any of the user's paper text can never reach the user or a log file.
     """
+    check = "answer_fields"
     try:
         answer = GroundedAnswer.model_validate_json(text)
         passages_by_id = {passage["chunk_id"]: passage for passage in passages}
 
         # Step 1: the listed passage IDs must be ones we really sent.
+        check = "cited_chunk_ids"
         check_cited_ids_are_real(answer.cited_chunk_ids, passages_by_id)
 
         # Step 2: collect the pages the answer cites as "[Page N]".
@@ -331,10 +333,12 @@ def parse_grounded_answer(text: str, passages: list[dict]) -> tuple[GroundedAnsw
 
         # Step 3: any page named in ordinary prose must be one of those cited pages.
         # Done after step 2 because this check needs to know what was cited.
+        check = "citation_format_or_prose_page"
         check_prose_page_numbers_are_cited(answer.answer, set(citations))
 
         # Step 4: an honest "I don't know" must not claim any evidence at all.
         if answer.insufficient_evidence:
+            check = "insufficient_evidence_with_citations"
             if answer.cited_chunk_ids or citations:
                 raise ValueError("Insufficient evidence cannot claim citations")
             # Replace the AI's wording with our own fixed sentence, so this message is
@@ -348,17 +352,24 @@ def parse_grounded_answer(text: str, passages: list[dict]) -> tuple[GroundedAnsw
         cited_pages = {
             passages_by_id[chunk_id]["page_number"] for chunk_id in answer.cited_chunk_ids
         }
+        check = "citation_page_source_match"
         check_citations_match_sources(citations, cited_pages)
 
         # Step 6: no paragraph may rely on another paragraph's citation.
+        check = "citation_required_per_paragraph"
         check_every_paragraph_is_cited(answer.answer)
 
         return answer, build_source_passages(answer.cited_chunk_ids, passages_by_id)
 
-    except (ValueError, KeyError, TypeError, ValidationError):
+    except (ValueError, KeyError, TypeError) as error:
+        if isinstance(error, ValidationError) and any(
+            item["type"] == "json_invalid" for item in error.errors(include_input=False)
+        ):
+            check = "invalid_json"
         raise ProviderError(
             "The AI provider returned an invalid answer or unsupported page citations. "
-            "Please try again."
+            "Please try again.",
+            validation_check=check,
         ) from None
 
 
@@ -393,13 +404,21 @@ def build_citation_example(passages: list[dict]) -> str:
     the document's own IDs fixes that far more reliably than describing the rule again.
     """
     example_passage = passages[0]
+    example = {
+        "answer": f"The supported claim. [Page {example_passage['page_number']}]",
+        "cited_chunk_ids": [example_passage["chunk_id"]],
+        "insufficient_evidence": False,
+    }
     return (
-        "\nFor a supported answer, put the page marker inside the answer text at the end of every "
-        "paragraph. Listing a chunk ID alone does not cite the answer. For example, if the "
-        f"claim is supported by {example_passage['chunk_id']}, write \"The supported claim. "
-        f"[Page {example_passage['page_number']}]\" in answer and list \"{example_passage['chunk_id']}\" "
-        "in cited_chunk_ids. Use only the passages that actually support your answer. "
-        "For a short answer, use one paragraph. For insufficient evidence, omit both kinds of citation."
+        "\nReturn one JSON object. For a short supported answer use one paragraph. "
+        "End every paragraph with the exact [Page N] marker for its supporting passage. "
+        "Copy N from that passage's page_number. Put only the matching chunk IDs in "
+        "cited_chunk_ids. Never use a chunk ID inside a page marker or mention extra pages. "
+        "This is a format example only. Choose the evidence that actually answers the question: "
+        + json.dumps(example)
+        + f'\nIn that example, list "{example_passage["chunk_id"]}" in cited_chunk_ids.'
+        + '\nIf unsupported, use {"answer":"Insufficient evidence.",'
+        '"cited_chunk_ids":[],"insufficient_evidence":true}.'
     )
 
 

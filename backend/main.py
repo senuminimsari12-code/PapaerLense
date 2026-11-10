@@ -22,12 +22,14 @@ steps:
 
 import asyncio
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -39,6 +41,10 @@ from backend.ai_errors import ProviderError
 from backend.chat import (
     ChatRequest, ChatResponse, INSUFFICIENT_ANSWER, build_evidence, chat_cache_key,
     follow_up_context, generate_answer, remember_answer,
+)
+from backend.document_sessions import (
+    SESSION_HEADER, documents, get_current_document, prune_expired_documents,
+    store_document, validate_upload_session,
 )
 from backend.pdf_processing import MAX_UPLOAD_BYTES, PDFError, extract_pdf
 from backend.retrieval import PAGE_REFERENCE, build_index, retrieve_chunks
@@ -56,25 +62,13 @@ app = FastAPI(
     description="PDF extraction, structured summaries and grounded paper Q&A.",
 )
 
-# Where the uploaded document lives: one plain dictionary, in memory.
-#
-# This holds AT MOST ONE document. A successful upload clears it and stores the new one,
-# which is why uploading a second PDF makes the first one's ID stop working.
-#
-# This is deliberate for a local single-user prototype. It also means there is no
-# database, nothing is written to disk, and everything is forgotten when the server
-# stops. A real multi-user app would need a database and per-user access checks.
-#
-# Each stored value is a dict holding: document_id, filename, page_count,
-# character_count, pages, preview, and later the cached summary, retrieval_index and
-# chat_cache.
-documents: dict[str, dict] = {}
-
 # Extra room above the file limit for multipart form overhead (field names, boundary
 # markers). Without it, a file at exactly the limit could be rejected for being a few
 # hundred bytes too large once wrapped in a form.
 MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024
 MAX_CHAT_BODY_BYTES = 16 * 1024
+MAX_ACTIVE_UPLOADS = 2
+MAX_ACTIVE_AI_REQUESTS = 4
 
 # How much we read from the network at a time while receiving an upload.
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024
@@ -88,6 +82,7 @@ class UploadResponse(BaseModel):
     """What the frontend receives after a successful upload."""
 
     document_id: str
+    session_id: str
     filename: str
     page_count: int
     character_count: int
@@ -95,7 +90,7 @@ class UploadResponse(BaseModel):
 
 
 class RequestBodyLimit:
-    """Stop oversized PDF uploads and chat requests while they are still arriving.
+    """Bound request bodies and concurrent PDF/AI work before reading the body.
 
     This is ASGI middleware, which is a lower level than a normal FastAPI route. It is
     worth the extra complexity for one reason: FastAPI only hands us the file after the
@@ -115,6 +110,7 @@ class RequestBodyLimit:
 
     def __init__(self, app):
         self.app = app
+        self.active_requests = {"upload": 0, "AI": 0}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] != "POST":
@@ -123,12 +119,18 @@ class RequestBodyLimit:
 
         path = scope["path"]
         if path == "/api/upload":
+            group = "upload"
+            active_limit = MAX_ACTIVE_UPLOADS
+            busy_message = "Too many uploads are in progress. Please try again shortly."
             byte_limit = MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_ALLOWANCE
             limit_message = "This upload exceeds the 20 MB (20 MiB) limit."
-        elif path.startswith("/api/documents/") and path.endswith("/chat"):
+        elif path.startswith("/api/documents/") and path.endswith(("/chat", "/summary")):
+            group = "AI"
+            active_limit = MAX_ACTIVE_AI_REQUESTS
+            busy_message = "Too many AI requests are in progress. Please try again shortly."
             # Leave room for a 1,000-character question even when JSON escapes it.
             byte_limit = MAX_CHAT_BODY_BYTES
-            limit_message = "The chat request exceeds the 16 KiB body limit."
+            limit_message = f"The {path.rsplit('/', 1)[-1]} request exceeds the 16 KiB body limit."
         else:
             await self.app(scope, receive, send)
             return
@@ -146,7 +148,19 @@ class RequestBodyLimit:
 
             return message
 
-        await self.app(scope, receive_and_count, send)
+        # Bound multipart buffers and old AI requests still winding down after replacement.
+        if self.active_requests[group] >= active_limit:
+            response = JSONResponse(
+                {"detail": busy_message},
+                status_code=503, headers={"Retry-After": "2"},
+            )
+            await response(scope, receive, send)
+            return
+        self.active_requests[group] += 1
+        try:
+            await self.app(scope, receive_and_count, send)
+        finally:
+            self.active_requests[group] -= 1
 
 
 class ContainUnexpectedErrors:
@@ -201,16 +215,27 @@ class ContainUnexpectedErrors:
 # Middleware order matters, and reads backwards: the LAST one added is the OUTERMOST,
 # so it sees the request first. The effective order for an upload is therefore:
 #   CORS  ->  RequestBodyLimit  ->  ContainUnexpectedErrors  ->  the endpoint.
+def allowed_frontend_origins() -> list[str]:
+    origins = ["http://localhost:5173", "http://localhost:4173"]
+    for value in os.getenv("PAPERLENS_ALLOWED_ORIGINS", "").split(","):
+        origin = value.strip()
+        if not origin:
+            continue
+        parsed = urlsplit(origin)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+                or "*" in origin or origin != f"https://{parsed.netloc}"):
+            raise ValueError("PAPERLENS_ALLOWED_ORIGINS must contain exact HTTPS origins.")
+        origins.append(origin)
+    return origins
+
+
 app.add_middleware(ContainUnexpectedErrors)
 app.add_middleware(RequestBodyLimit)
 app.add_middleware(
-    # Browsers block cross-origin requests unless the server allows them. Only the two
-    # local Vite addresses are allowed: 5173 for `npm run dev`, 4173 for `npm run preview`.
-    # Other origins cannot read responses through browser CORS. This is not access control.
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_origins=allowed_frontend_origins(),
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", SESSION_HEADER],
 )
 
 
@@ -283,7 +308,7 @@ def strip_directories_from_filename(filename: str | None) -> str:
         }}
     }}}},
 )
-async def upload_pdf(request: Request):
+async def upload_pdf(request: Request, response: Response):
     """Accept one PDF, extract its text, and register it as the current document.
 
     The steps, in order:
@@ -293,6 +318,8 @@ async def upload_pdf(request: Request):
       4. Extract the text (this is where an invalid PDF is rejected).
       5. Replace any previous document and store this one under a new ID.
     """
+    session_id = request.headers.get(SESSION_HEADER)
+    validate_upload_session(session_id)
     # Step 1: reject anything that is not a file upload, such as a JSON body.
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
     if content_type != "multipart/form-data":
@@ -332,13 +359,12 @@ async def upload_pdf(request: Request):
             # Release the PDF bytes promptly; they can be up to 20 MB.
             del pdf_bytes
 
-    # Step 5: register the document. Only now, after extraction succeeded, do we clear
-    # the previous one. A rejected upload therefore leaves the old document working.
+    # Step 5: replace this session's document only after extraction succeeds.
     document_id = str(uuid4())
     document = {"document_id": document_id, "filename": filename, **extracted}
 
-    documents.clear()
-    documents[document_id] = document
+    session_id = store_document(document, session_id)
+    response.headers["Cache-Control"] = "no-store"
 
     readable_pages = 0
     for page in document["pages"]:
@@ -352,23 +378,12 @@ async def upload_pdf(request: Request):
 
     return UploadResponse(
         document_id=document["document_id"],
+        session_id=session_id,
         filename=document["filename"],
         page_count=document["page_count"],
         character_count=document["character_count"],
         preview=document["preview"],
     )
-
-
-def get_current_document(document_id: str) -> dict:
-    """Look up a document by ID, or raise 404 if it is not the current one.
-
-    Because only one document is stored at a time, an ID stops working as soon as a new
-    PDF is uploaded. The message says so plainly rather than implying a server fault.
-    """
-    document = documents.get(document_id)
-    if document is None:
-        raise HTTPException(404, "This document is no longer available. Upload the PDF again.")
-    return document
 
 
 def raise_if_document_was_replaced(document_id: str, document: dict, message: str) -> None:
@@ -379,12 +394,13 @@ def raise_if_document_was_replaced(document_id: str, document: dict, message: st
     (`is not`) to confirm the stored document is still the exact same one we started
     with, so we never show the new paper an answer built from the old one.
     """
+    prune_expired_documents()
     if documents.get(document_id) is not document:
         raise HTTPException(404, message)
 
 
 @app.post("/api/documents/{document_id}/summary", response_model=SummaryResponse)
-async def summarize_document(document_id: str):
+async def summarize_document(document_id: str, request: Request, response: Response):
     """Generate the five-section summary for a document, or return the cached one.
 
     The steps, in order:
@@ -394,7 +410,8 @@ async def summarize_document(document_id: str):
       4. Ask the AI providers, in order, until one returns a valid five-section summary.
       5. Check the document was not replaced while we waited, then cache and return it.
     """
-    document = get_current_document(document_id)
+    document = get_current_document(document_id, request.headers.get(SESSION_HEADER))
+    response.headers["Cache-Control"] = "no-store"
 
     # Step 2: a repeat click costs nothing and cannot produce a different summary.
     if document.get("summary") is not None:
@@ -438,7 +455,7 @@ async def summarize_document(document_id: str):
 
 
 @app.post("/api/documents/{document_id}/chat", response_model=ChatResponse)
-async def chat_with_document(document_id: str, request: ChatRequest):
+async def chat_with_document(document_id: str, request: ChatRequest, http_request: Request, response: Response):
     """Answer one question about a document, using passages retrieved from it.
 
     The steps, in order:
@@ -451,7 +468,8 @@ async def chat_with_document(document_id: str, request: ChatRequest):
       7. Otherwise ask the providers and validate the citations.
       8. Cache the result and return it.
     """
-    document = get_current_document(document_id)
+    document = get_current_document(document_id, http_request.headers.get(SESSION_HEADER))
+    response.headers["Cache-Control"] = "no-store"
     question = request.question
 
     # Step 2: "How many heads does it use?" needs the previous question to make sense.

@@ -30,6 +30,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # These two Groq models accept a "reasoning_effort" option. Keeping it low makes
 # replies faster and cheaper, which matters because Groq is only a backup provider.
 GROQ_MODELS_WITH_REASONING_EFFORT = {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}
+GROQ_STRICT_SCHEMA_MODELS = GROQ_MODELS_WITH_REASONING_EFFORT | {"qwen/qwen3.8-27b"}
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,8 @@ def build_request_payload(provider: str, model: str, instructions: str, contents
 
     The important difference between the two providers is how we ask for JSON:
 
-    - Groq supports a real "json_schema" response format, so we hand it the schema
-      and the provider itself guarantees the shape.
+    - Groq supports strict JSON schemas on specific models. Other configured Groq
+      models use JSON mode with the schema in the instructions.
     - OpenRouter's free models do not reliably support that, so instead we paste the
       schema into the instructions and ask for a bare JSON object in words.
 
@@ -52,15 +53,20 @@ def build_request_payload(provider: str, model: str, instructions: str, contents
     if provider == "groq":
         url = GROQ_URL
         payload["max_completion_tokens"] = max_output_tokens
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {"name": "paperlens_output", "strict": True, "schema": schema},
-        }
+        if model in GROQ_STRICT_SCHEMA_MODELS:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "paperlens_output", "strict": True, "schema": schema},
+            }
+        else:
+            payload["response_format"] = {"type": "json_object"}
         if model in GROQ_MODELS_WITH_REASONING_EFFORT:
             payload["reasoning_effort"] = "low"
     else:
         url = OPENROUTER_URL
         payload["max_tokens"] = max_output_tokens
+
+    if payload.get("response_format", {}).get("type") != "json_schema":
         instructions = instructions + (
             "\nReturn only one JSON object matching this schema, without Markdown.\n"
             + json.dumps(schema, separators=(",", ":"))
@@ -157,9 +163,4 @@ async def request_completion(provider: str, api_key: str, model: str, instructio
     if response.is_error:
         raise provider_error_for_status(response.status_code)
 
-    generated_text = read_generated_text(response)
-
-    if provider == "openrouter":
-        generated_text = strip_markdown_code_fence(generated_text)
-
-    return generated_text
+    return strip_markdown_code_fence(read_generated_text(response))

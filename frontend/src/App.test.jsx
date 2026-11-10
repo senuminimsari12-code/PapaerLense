@@ -11,6 +11,7 @@ import {
 import App, { formatFileSize } from "./App.jsx";
 
 const successfulResult = {
+  session_id: "s".repeat(43),
   document_id: "document-one",
   filename: "first.pdf",
   page_count: 3,
@@ -40,6 +41,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  sessionStorage.clear();
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -336,7 +338,7 @@ describe("PaperLense structured summaries", () => {
     );
     expect(options.method).toBe("POST");
     expect(options.body).toBeUndefined();
-    expect(options.headers).toBeUndefined();
+    expect(options.headers).toEqual({ "X-PaperLens-Session": successfulResult.session_id });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

@@ -300,6 +300,7 @@ def test_cancelled_summary_releases_busy_state_and_can_be_retried(make_pdf, mock
         transport = httpx.ASGITransport(app=main.app)
         async with REAL_ASYNC_CLIENT(transport=transport, base_url="http://test") as client:
             uploaded = await client.post("/api/upload", files={"file": ("paper.pdf", make_pdf())})
+            client.headers[main.SESSION_HEADER] = uploaded.json()["session_id"]
             document_id = uploaded.json()["document_id"]
             endpoint = f"/api/documents/{document_id}/summary"
             pending = asyncio.create_task(client.post(endpoint))
@@ -336,6 +337,7 @@ def test_in_flight_duplicate_or_replacement_does_not_corrupt_state(make_pdf, moc
         requests = mock_provider(handler=wait_for_release)
         async with REAL_ASYNC_CLIENT(transport=httpx.ASGITransport(app=main.app), base_url="http://test") as client:
             uploaded = await client.post("/api/upload", files={"file": ("paper.pdf", make_pdf())})
+            client.headers[main.SESSION_HEADER] = uploaded.json()["session_id"]
             document_id = uploaded.json()["document_id"]
             pending = asyncio.create_task(client.post(f"/api/documents/{document_id}/summary"))
             await asyncio.wait_for(started.wait(), timeout=2)
