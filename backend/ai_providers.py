@@ -15,8 +15,8 @@ provider system is just these five ideas:
    reply). Validation failures raise one too. Either way, we move to the next provider.
 
 4. How long may each provider take?
-   There is ONE deadline for the whole request. Each provider gets an equal share of
-   whatever time is left, so a slow first provider cannot eat its backups' time.
+   There is ONE deadline for the whole request. Early attempts have capped shares,
+   leaving more time for a slower backup. The last provider gets what remains.
 
 5. What if every provider fails?
    generate_with_failover raises one safe ProviderError. The user's PDF is untouched
@@ -50,6 +50,13 @@ PROVIDERS = (
 # The placeholder shipped in .env.example. Treated as "no key set" so that copying the
 # example file without editing it does not look like a configured provider.
 PLACEHOLDER_KEY = "your_gemini_api_key_here"
+
+# Caps apply only when another configured provider is still available.
+EARLY_ATTEMPT_CAPS = {
+    "summary": {"gemini": 20, "groq": 15},
+    "qa": {"gemini": 18, "groq": 12},
+}
+MINIMUM_START_SECONDS = 2
 
 # A model name may only contain these characters. Anything else is a configuration
 # mistake, and we refuse it rather than sending it to a provider or writing it to a log.
@@ -188,18 +195,22 @@ async def generate_with_failover(
     )
     last_non_size_error = last_error
     size_rejections = 0
+    input_bytes = len(contents.encode("utf-8"))
 
     for position, provider in enumerate(configured_providers):
         started_at = event_loop.time()
         time_remaining = deadline - started_at
-        if time_remaining <= 0:
+        # Keep the floor proportional for short caller-supplied deadlines.
+        if time_remaining <= 0 or (
+            position > 0 and time_remaining < min(MINIMUM_START_SECONDS, timeout_seconds / 10)
+        ):
             break
 
-        # Split the remaining time evenly between this provider and the ones after it.
-        # Example: 90s left and 3 providers -> this one gets 30s. If it uses all 30s,
-        # the next gets 60s / 2 = 30s. A stalled provider cannot starve its backups.
         providers_left = len(configured_providers) - position
         time_budget = time_remaining / providers_left
+        if providers_left > 1:
+            cap = EARLY_ATTEMPT_CAPS.get(request_type, {}).get(provider.name, time_budget)
+            time_budget = min(time_budget, cap)
 
         model_is_safe = model_name_is_safe(provider.model, configured_providers)
         model_for_logging = provider.model if model_is_safe else "[redacted]"
@@ -218,13 +229,15 @@ async def generate_with_failover(
 
             # This timeout covers the network call AND validation together, which is
             # why the adapters below do not set their own competing timeouts.
-            async with asyncio.timeout(time_budget):
+            async with asyncio.timeout_at(started_at + time_budget):
                 generated_text, model_used = await ask_one_provider(
                     provider, instructions, contents, schema,
                     max_output_tokens, time_budget, gemini_http_timeout_ms,
                 )
                 phase = "validation"
                 validated_result = validate(generated_text)
+                if event_loop.time() >= started_at + time_budget:
+                    raise TimeoutError
 
         except TimeoutError:
             last_error = ProviderError(
@@ -235,9 +248,11 @@ async def generate_with_failover(
         else:
             # Success. Stop here: do not contact any remaining provider.
             logger.info(
-                "AI provider=%s model=%s request=%s status=success duration_ms=%d fallback=%s",
+                "AI provider=%s model=%s request=%s status=success duration_ms=%d fallback=%s "
+                "budget_ms=%d input_bytes=%d",
                 provider.name, model_for_logging, request_type,
                 (event_loop.time() - started_at) * 1000, provider.name != "gemini",
+                time_budget * 1000, input_bytes,
             )
             return validated_result, model_used
 
@@ -248,10 +263,12 @@ async def generate_with_failover(
             last_non_size_error = last_error
         logger.warning(
             "AI provider=%s model=%s request=%s status=failed category=%s "
-            "upstream_code=%s phase=%s duration_ms=%d fallback=%s",
+            "upstream_code=%s phase=%s duration_ms=%d fallback=%s budget_ms=%d input_bytes=%d "
+            "validation_check=%s",
             provider.name, model_for_logging, request_type,
-            last_error.category, last_error.upstream_status, phase,
+            last_error.category, last_error.upstream_status or (200 if phase == "validation" else None), phase,
             (event_loop.time() - started_at) * 1000, provider.name != "gemini",
+            time_budget * 1000, input_bytes, last_error.validation_check,
         )
 
     # No provider returned a valid result before the deadline.

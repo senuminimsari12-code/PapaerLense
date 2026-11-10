@@ -30,8 +30,10 @@ class ProviderError(ValueError):
     """
 
     def __init__(self, message: str, status_code: int = 502, *,
-                 category: str = "invalid_output", upstream_status: int | None = None):
+                 category: str = "invalid_output", upstream_status: int | None = None,
+                 validation_check: str | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.category = category
         self.upstream_status = upstream_status
+        self.validation_check = validation_check

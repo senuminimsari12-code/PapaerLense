@@ -11,6 +11,7 @@ const answerParagraph = (text) => (_content, node) =>
   node.matches("p.message-text") && node.textContent === text;
 
 const uploaded = {
+  session_id: "s".repeat(43),
   document_id: "paper-one", filename: "first.pdf", page_count: 3,
   character_count: 120, preview: "Page 2\nClassifier research preview",
 };
@@ -62,6 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  sessionStorage.clear();
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -91,7 +93,7 @@ describe("Grounded paper Q&A", () => {
     const [url, options] = fetch.mock.calls[2];
     expect(url).toBe("http://localhost:8000/api/documents/paper-one/chat");
     expect(JSON.parse(options.body)).toEqual({ question });
-    expect(options.headers).toEqual({ "Content-Type": "application/json" });
+    expect(options.headers).toEqual({ "Content-Type": "application/json", "X-PaperLens-Session": uploaded.session_id });
     const sources = screen.getByText("Supporting passages (1)");
     expect(sources.closest("details").open).toBe(false);
     fireEvent.click(sources);

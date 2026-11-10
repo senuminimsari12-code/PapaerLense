@@ -368,7 +368,10 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCit
         `${apiBaseUrl}/api/documents/${encodeURIComponent(document.document_id)}/chat`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-PaperLens-Session": document.session_id,
+          },
           body: JSON.stringify({ question: submittedQuestion }),
           signal: controller.signal,
         },
@@ -455,7 +458,7 @@ export default function ChatPanel({ document, isUploading, apiBaseUrl, onOpenCit
         <span className="chat-badge">{t("Answers with page references")}</span>
       </div>
 
-      <p className="chat-privacy">{t("PaperLense finds relevant passages locally. To generate an answer, it sends your question and those passages to configured providers as needed, in order from Gemini to Groq to OpenRouter.")}</p>
+      <p className="chat-privacy">{t("The backend finds relevant passages. To answer, it sends your question and those passages to configured providers in order from Gemini to Groq to OpenRouter.")}</p>
 
       {turns.length === 0 ? (
         <div className="chat-empty">

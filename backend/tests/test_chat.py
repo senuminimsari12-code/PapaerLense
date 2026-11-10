@@ -126,7 +126,10 @@ def test_image_only_pdf_rejected_without_chat_record(client, make_pdf):
 
 
 def test_defensive_empty_text_index_returns_insufficient_evidence(client):
-    documents["empty"] = {"document_id": "empty", "pages": [{"page_number": 1, "text": " "}]}
+    session = main.store_document(
+        {"document_id": "empty", "character_count": 1, "pages": [{"page_number": 1, "text": " "}]}, None
+    )
+    client.headers[main.SESSION_HEADER] = session
     result = ask(client, "empty")
     assert result.status_code == 200 and result.json()["insufficient_evidence"] is True
 
@@ -322,6 +325,7 @@ def test_pending_duplicate_or_document_replacement_is_safe(make_pdf, mock_gemini
         calls = mock_gemini(handler=wait)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://test") as client:
             original = await client.post("/api/upload", files={"file": ("paper.pdf", make_pdf(PAPER))})
+            client.headers[main.SESSION_HEADER] = original.json()["session_id"]
             document_id = original.json()["document_id"]
             old_document = documents[document_id]
             pending = asyncio.create_task(client.post(f"/api/documents/{document_id}/chat", json={"question": QUESTION}))
@@ -350,8 +354,14 @@ def test_replacement_during_retrieval_never_generates_from_old_document(client, 
     document_id = upload(client, make_pdf)
     original = getattr(main, stage)
     def replace(*args):
-        documents.clear()
-        documents["new"] = {"pages": [{"page_number": 1, "text": "Replacement"}]}
+        main.store_document(
+            {
+                "document_id": "new",
+                "character_count": len("Replacement"),
+                "pages": [{"page_number": 1, "text": "Replacement"}],
+            },
+            documents[document_id]["session_id"],
+        )
         return original(*args)
     monkeypatch.setattr(main, stage, replace)
     assert ask(client, document_id).status_code == 404

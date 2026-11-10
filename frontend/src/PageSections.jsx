@@ -43,7 +43,7 @@ export function IntroSection() {
         {t("Upload a research PDF to read its summary, ask questions, and open cited pages.")}
       </p>
       <div className="local-note">
-        <Icon name="shield" size={16} />{" "}{t("PDF extraction stays local")}{" "}
+        <Icon name="shield" size={16} />{" "}{t("The backend extracts PDF text")}{" "}
         <span aria-hidden="true">·</span>{" "}{t("Summaries and Q&A use online AI providers")}</div>
     </section>
   );

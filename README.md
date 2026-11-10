@@ -2,7 +2,7 @@
 
 **Your research, in focus.** A small research workspace built with React, Vite, FastAPI and PyMuPDF.
 
-PaperLense uploads and validates one PDF at a time, extracts numbered page text, and displays a real preview. **Successful uploads automatically start a five-section summary.** Document-grounded Q&A uses local retrieval and validated page citations. PDF extraction and retrieval run locally. AI generation tries configured providers in order, starting with Gemini and falling back to Groq and OpenRouter. No database, authentication, OCR, vector service or agent framework is used.
+PaperLense uploads and validates one PDF per browser session, extracts numbered page text, and displays a real preview. **Successful uploads automatically start a five-section summary.** The FastAPI backend extracts the text, retrieves passages and validates citations. AI generation tries configured providers in order, starting with Gemini and falling back to Groq and OpenRouter. No database, account authentication, OCR, vector service or agent framework is used.
 
 See the [assessment checklist](docs/ASSESSMENT_CHECKLIST.md) for current verification and the [developer handover](docs/DEVELOPER_HANDOVER.md) for a source walkthrough. The [final audit report](docs/FINAL_AUDIT_REPORT.md) records earlier live observations and their limits.
 
@@ -30,6 +30,8 @@ Supply the keys for the providers you want enabled and restart the backend. Mode
 | 3 | OpenRouter | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
 
 The backend loads the ignored repository-root `.env` using `python-dotenv`, including under WSL. Variables set in the backend process take precedence. For temporary configuration, set them in the environment of the shell that launches the backend. A PowerShell assignment is inherited by native Windows processes, while WSL processes need variables from their own environment or explicit forwarding with `WSLENV`. Keep keys out of React, `VITE_` variables, Git, logs and chat.
+
+Summary and Q&A each have one 90-second AI deadline. When a backup is configured, Gemini gets at most 20 seconds for a summary or 18 for Q&A, and Groq gets at most 15 or 12 seconds respectively if a provider follows it. The last provider gets the remaining time. Each provider is attempted at most once. Provider logs include safe status, input size, attempt budget and the failed Q&A validation check, without logging the paper, answer or credentials.
 
 Gemini retains the official [`google-genai` SDK](https://googleapis.github.io/python-genai/) and [structured outputs](https://ai.google.dev/gemini-api/docs/generate-content/structured-output). Gemini model overrides need text generation, JSON schema support and `LOW` thinking. Groq uses its [chat completions API](https://console.groq.com/docs/api-reference) and [strict JSON Schema support](https://console.groq.com/docs/structured-outputs#supported-models). Its default model appears in the [public free-plan limits](https://console.groq.com/docs/rate-limits#rate-limits), while actual access and limits depend on your project. OpenRouter uses the [chat completions API](https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request) with the exact configured model. The [default free model](https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free) has no `response_format` support, so PaperLense requests JSON in its instructions and validates the result locally.
 
@@ -119,7 +121,7 @@ Start the Windows frontend in Terminal 2. Check the backend from PowerShell with
 - Maximum 500 pages and 2,000,000 extracted characters per document. Preview: at most 4,000 characters, including page labels and separators.
 - Original page numbers are retained, including blank pages. Characters count the extracted, trimmed page text, excluding preview labels and separators.
 - Exactly **one successful document** is stored globally, in a Python dictionary keyed by a UUID. The next successful upload replaces it. Failed uploads do not add records. No raw PDF bytes are kept after processing; multipart parsing may use temporary spool files, closed and removed when the request finishes.
-- **Memory resets on backend restart.** Run one backend process for this local, single-user prototype. There is no authentication or user/session isolation. Retrieval runs inside the chat endpoint. The browser clears old results immediately when selecting a replacement, even if that replacement fails.
+- **Memory resets on backend restart.** Run one backend process. Browser sessions isolate temporary documents, summaries and chat caches. This prototype has no user accounts. The browser clears old results immediately when selecting a replacement, even if that replacement fails.
 - Summaries use **all extracted page text**, with original page labels. The request is limited to **120,000 UTF-8 bytes including page labels and separators**. Larger inputs receive HTTP 413 before any provider request. No pages are silently dropped. Use a shorter paper or an explicitly labeled excerpt for this prototype; chunked summarization is not implemented. Byte counts are not token counts.
 - Summary output must contain all five non-empty string fields, each at most 12,000 characters. Malformed output, provider refusals and incomplete generation are rejected. The provider output budget is 6,000 tokens. The backend has a 90-second total deadline and the browser a 110-second deadline. PaperLense can move on to another provider but only an explicit user action starts a new summary request after the whole sequence fails.
 - The model is instructed to use only the supplied paper, preserve technical terms and exact reported metrics, distinguish reported findings from interpretation, and say when information is not reported. These instructions and schema validation cannot guarantee factual accuracy. Check important details against the original PDF. Figures/images are not analyzed.
@@ -199,7 +201,8 @@ HTTP 200:
 Send **exactly one** file as `multipart/form-data`, using the field `file`. Additional file or text fields are rejected. In PowerShell, `curl.exe` invokes the actual curl executable:
 
 ```powershell
-curl.exe -X POST 'http://localhost:8000/api/upload' -F 'file=@C:\path\to\paper.pdf'
+$upload = curl.exe -fsS 'http://localhost:8000/api/upload' -F 'file=@C:\path\to\paper.pdf' | ConvertFrom-Json
+$sessionHeaders = @{ 'X-PaperLens-Session' = $upload.session_id }
 ```
 
 Example response shape (illustrative values; actual results depend on the PDF), HTTP 201:
@@ -207,6 +210,7 @@ Example response shape (illustrative values; actual results depend on the PDF), 
 ```json
 {
   "document_id": "e672e6b6-7e33-4c21-98db-15a9302bd6ab",
+  "session_id": "<server-issued browser session token>",
   "filename": "paper.pdf",
   "page_count": 2,
   "character_count": 1234,
@@ -214,7 +218,7 @@ Example response shape (illustrative values; actual results depend on the PDF), 
 }
 ```
 
-The memory entry additionally contains `pages`, for example `[{"page_number": 1, "text": "..."}, {"page_number": 2, "text": "..."}]`. This array is not returned in the preview endpoint. The React upload-success handler chains one request to the existing summary endpoint. The upload API itself still returns extraction metadata only; other API clients must call the summary endpoint explicitly.
+The memory entry additionally contains `pages`, for example `[{"page_number": 1, "text": "..."}, {"page_number": 2, "text": "..."}]`. This array is not returned by upload. Keep the session token private. Send it as `X-PaperLens-Session` on subsequent requests. Include it on replacement uploads to replace the same session's document. The browser starts one summary automatically after a successful upload. API clients call the summary endpoint explicitly.
 
 Errors have the JSON shape `{"detail": "A useful explanation"}`:
 
@@ -224,14 +228,15 @@ Errors have the JSON shape `{"detail": "A useful explanation"}`:
 | 413 | File/request too large, or page/character safety limit exceeded |
 | 415 | Non-PDF contents or unsupported request content type |
 | 422 | Damaged PDF, password required or no extractable text |
+| 503 | The upload queue or document store is full. Try again later. |
 | 500 | Unexpected failure, with a generic message; only its exception type is logged |
 
 ### `POST /api/documents/{document_id}/summary`
 
-Use the ID returned by upload. No request body or browser API key is required:
+Use the document ID and session header from the upload. The request has no body.
 
 ```powershell
-Invoke-RestMethod -Method Post 'http://localhost:8000/api/documents/YOUR_DOCUMENT_ID/summary'
+Invoke-RestMethod -Method Post "http://localhost:8000/api/documents/$($upload.document_id)/summary" -Headers $sessionHeaders
 ```
 
 HTTP 200 response shape below. These are **schema descriptions**, not a generated summary:
@@ -267,11 +272,11 @@ Expected operational and request-validation errors use `{"detail": "Helpful mess
 
 ### `POST /api/documents/{document_id}/chat`
 
-Send a JSON `question` of 1–1,000 characters, trimmed; no other request fields are accepted. Replace the document ID with the one returned by upload:
+Send the session header and a JSON `question` of 1–1,000 characters. The body accepts only the question.
 
 ```powershell
 $questionBody = @{ question = 'What are the main results?' } | ConvertTo-Json
-Invoke-RestMethod -Method Post 'http://localhost:8000/api/documents/YOUR_DOCUMENT_ID/chat' -ContentType 'application/json' -Body $questionBody
+Invoke-RestMethod -Method Post "http://localhost:8000/api/documents/$($upload.document_id)/chat" -Headers $sessionHeaders -ContentType 'application/json' -Body $questionBody
 ```
 
 HTTP 200 returns `document_id`, plain-text `answer`, `sources` (`chunk_id`, `page_number`, `excerpt`), `insufficient_evidence`, `model`, and optional `context_question`. A no-match response has an explanation, empty sources, `insufficient_evidence: true` and `model: null`. A model may also decline when matched passages do not establish an answer. A successful backup returns the same response shape and reports the model that generated the answer. Exhausting the provider sequence returns an error.
@@ -287,13 +292,40 @@ HTTP 200 returns `document_id`, plain-text `answer`, `sources` (`chunk_id`, `pag
 | 503 | Missing configuration, credential/access rejection, unavailable provider or network failure |
 | 504 | Provider timeout or total request deadline |
 
-Chat shares a 90-second backend deadline across providers. The browser request aborts after 110 seconds. A failed answer is not cached. Starting another attempt after a failure requires an explicit user action. Browser history and backend context belong to the current single-user workspace.
+Chat shares a 90-second backend deadline across providers. The browser request aborts after 110 seconds. A failed answer is not cached. Starting another attempt after a failure requires an explicit user action. Browser history and backend context belong to the current document in the browser session.
 
 ### Configuration and CORS
 
 The frontend reads `VITE_API_BASE_URL` at build time. On localhost it defaults to port 8000. On a deployed site without this variable, requests use the site's own origin, which requires a reverse proxy for `/api`. For a separately hosted API, set `VITE_API_BASE_URL` to its HTTPS address before building. Vite exposes `VITE_` variables to React. Keep provider keys in the backend variables listed above.
 
-The backend allows the two standard local Vite origins, **`http://localhost:5173`** for development and **`http://localhost:4173`** for production preview. Use those exact URLs. A URL using `127.0.0.1` is a different origin. If you intentionally change the frontend origin, update `allow_origins` in `backend/main.py` to match. CORS controls which origins can read responses in a browser. It does not authenticate requests or prevent an upload from replacing the current document. Keep the backend bound to loopback for the assessment.
+The backend allows `http://localhost:5173` and `http://localhost:4173` by default. Set `PAPERLENS_ALLOWED_ORIGINS` on the backend to add comma-separated, exact HTTPS frontend origins, with no paths, trailing slashes or wildcards. For the current Vercel frontend use `https://paperlense.vercel.app`. CORS allows browser requests from these origins. Document access is checked separately through the session token.
+
+### Browser sessions and memory
+
+On a first successful upload the backend creates a random 256-bit session token. The frontend keeps it in the tab's session storage and attaches it to upload, summary and chat requests. The backend checks that the requested document belongs to that token before returning or generating anything. Uploading a new PDF replaces only the document for that token. An expired, missing or foreign document returns the same 404, and uploading again after expiry starts a new session.
+
+Documents expire 30 minutes after a successful upload. The backend removes expired records on document operations. It keeps at most eight documents and four million extracted characters in total, with up to two concurrent uploads and four concurrent AI requests. At capacity it rejects new uploads rather than evicting another browser's paper. The existing per-file limit remains 20 MiB. The original PDF is held by the browser for citation navigation. The backend keeps extracted data and bounded caches in memory.
+
+This is a single-process assessment prototype with bearer session tokens and no user accounts or persistent storage. Anyone with a token can act as that session. Keep tokens private and upload only public or non-sensitive papers. The service is publicly callable, so the limits are not a substitute for authentication or provider quota controls.
+
+### Deploy the backend on Render Free
+
+1. Once the prepared changes are in your GitHub repository, create a **Web Service** on Render and choose the branch that contains them. Set **Runtime** to Python and **Instance Type** to Free. Leave the root directory at the repository root. The included `render.yaml` is an optional Blueprint for the same service.
+2. Configure these commands and set the health check path to `/api/health`.
+
+   ```sh
+   # Build command
+   pip install -r backend/requirements.txt
+
+   # Start command
+   uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+   ```
+
+3. On Render set `PYTHON_VERSION=3.14.4` and `PAPERLENS_ALLOWED_ORIGINS=https://paperlense.vercel.app` or the exact production origin you use. Render supplies `PORT`. To enable AI, set at least one of `GEMINI_API_KEY`, `GROQ_API_KEY` or `OPENROUTER_API_KEY` on **Render only**. The matching `GEMINI_MODEL`, `GROQ_MODEL` and `OPENROUTER_MODEL` overrides are optional. Upload and text extraction work without AI keys.
+4. Open `https://<service-name>.onrender.com/api/health` and confirm it returns `{"status":"ok"}`. On Vercel set the Production variable `VITE_API_BASE_URL` to `https://<service-name>.onrender.com` and rebuild the frontend so the browser sends API requests directly to Render. Keep provider keys out of Vercel and Git.
+5. From the Vercel URL, upload a small public PDF, check extraction and the automatic summary, and ask a question with a citation. Repeat in an independent browser profile with a different paper. Replace the first paper and confirm the second browser still works. In the browser Network panel, confirm requests go to Render. Keep the session header private if sharing debugging output.
+
+Render Free services can sleep after 15 minutes of inactivity and can restart or redeploy. The next request may take time to wake the service, and the old in-memory documents will be gone. If PaperLense asks you to upload again, reselect the PDF after the service is healthy. [Render Free limits](https://render.com/docs/free) · [Render FastAPI guide](https://render.com/docs/deploy-fastapi)
 
 ## Tests and production build
 

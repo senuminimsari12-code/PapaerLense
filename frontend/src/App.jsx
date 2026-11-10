@@ -55,6 +55,19 @@ const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
   (window.location.hostname === "localhost" ? `${window.location.protocol}//${window.location.hostname}:8000` : "")
 ).replace(/\/$/, "");
+const SESSION_HEADER = "X-PaperLens-Session";
+const SESSION_STORAGE_KEY = "paperlense-document-session";
+const SESSION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
+function readSession() {
+  try {
+    const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (saved && SESSION_TOKEN.test(saved)) return saved;
+  } catch {
+    // A fresh upload still works when browser storage is blocked.
+  }
+  return null;
+}
 
 // 20 MiB, matching the backend's limit. Checking here too means an oversized file is
 // rejected instantly without a pointless upload.
@@ -95,6 +108,8 @@ function isCompleteUploadResult(result) {
   return (
     typeof result?.document_id === "string" &&
     result.document_id.trim() !== "" &&
+    typeof result.session_id === "string" &&
+    SESSION_TOKEN.test(result.session_id) &&
     Number.isInteger(result.page_count) &&
     result.page_count >= 1 &&
     Number.isInteger(result.character_count) &&
@@ -159,6 +174,7 @@ function Workspace({ preferences }) {
   // The document the user most recently accepted. Used to confirm an automatic summary
   // still belongs to the document on screen.
   const currentDocument = useRef(null);
+  const browserSession = useRef(null);
 
   async function uploadFiles(files) {
     // Ignore a second upload while one is already running, and ignore an empty drop.
@@ -219,8 +235,10 @@ function Workspace({ preferences }) {
     const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
     try {
+      const session = browserSession.current ?? readSession();
       const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: "POST",
+        headers: session ? { [SESSION_HEADER]: session } : undefined,
         body: formData,
         signal: controller.signal,
       });
@@ -244,6 +262,12 @@ function Workspace({ preferences }) {
       // accepted. React's Strict Mode re-runs some code twice in development, but it
       // does not replay event handlers, so this cannot fire two summaries.
       currentDocument.current = result;
+      browserSession.current = result.session_id;
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, result.session_id);
+      } catch {
+        // Keep using the in-memory token for the current page.
+      }
       setUploadedDocument(result);
 
       // Deliberately not awaited. The preview and Q&A stay usable while the summary is
@@ -297,7 +321,11 @@ function Workspace({ preferences }) {
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/summary`,
-        { method: "POST", signal: controller.signal },
+        {
+          method: "POST",
+          headers: { [SESSION_HEADER]: targetDocument.session_id },
+          signal: controller.signal,
+        },
       );
 
       const result = await response.json();

@@ -63,7 +63,9 @@ def test_upload_returns_real_metadata_and_stores_numbered_pages(client, make_pdf
     response = client.post("/api/upload", files={"file": ("paper.pdf", make_pdf(("Research", "Results")), "application/pdf")})
     assert response.status_code == 201
     result = response.json()
-    assert set(result) == {"document_id", "filename", "page_count", "character_count", "preview"}
+    assert set(result) == {"document_id", "session_id", "filename", "page_count", "character_count", "preview"}
+    assert main.SESSION_HEADER not in response.request.headers
+    assert response.headers["cache-control"] == "no-store"
     assert UUID(result["document_id"]).version == 4
     assert result["filename"] == "paper.pdf"
     assert result["page_count"] == 2
@@ -183,9 +185,14 @@ def test_filename_does_not_expose_client_path(client, make_pdf):
     assert result["filename"] == "paper.pdf"
 
 
-@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://localhost:4173"])
+@pytest.mark.parametrize("origin", [
+    "http://localhost:5173", "http://localhost:4173", "https://paperlense.vercel.app",
+])
 def test_cors_allows_upload_response_for_local_frontend(client, make_pdf, origin):
-    allowed = client.options("/api/upload", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+    allowed = client.options("/api/upload", headers={
+        "Origin": origin, "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Content-Type, X-PaperLens-Session",
+    })
     assert allowed.status_code == 200
     assert allowed.headers["access-control-allow-origin"] == origin
     uploaded = client.post("/api/upload", headers={"Origin": origin}, files={"file": ("paper.pdf", make_pdf())})
@@ -196,8 +203,9 @@ def test_cors_allows_upload_response_for_local_frontend(client, make_pdf, origin
     assert document_id in documents
 
 
-def test_cors_rejects_untrusted_origin(client):
-    rejected = client.options("/api/upload", headers={"Origin": "https://example.com", "Access-Control-Request-Method": "POST"})
+@pytest.mark.parametrize("origin", ["https://example.com", "https://paperlense.vercel.app.example.com"])
+def test_cors_rejects_untrusted_origin(client, origin):
+    rejected = client.options("/api/upload", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
     assert rejected.status_code == 400
     assert "access-control-allow-origin" not in rejected.headers
 
@@ -207,6 +215,7 @@ def test_extraction_logs_counts_without_filename_or_paper_text(client, make_pdf,
     response = client.post("/api/upload", files={"file": ("private-name.pdf", make_pdf(("private text", "")))})
     assert response.status_code == 201
     assert response.json()["document_id"] in caplog.text
+    assert response.json()["session_id"] not in caplog.text
     assert "pages=2, readable_pages=1, characters=12" in caplog.text
     assert "private-name.pdf" not in caplog.text
     assert "private text" not in caplog.text

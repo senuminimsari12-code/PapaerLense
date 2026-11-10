@@ -1,10 +1,16 @@
+import os
+from unittest.mock import patch
+
 import httpx
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app, documents
 from backend import gemini_client
+from backend.document_sessions import SESSION_HEADER, documents
+
+with patch.dict(os.environ, {"PAPERLENS_ALLOWED_ORIGINS": "https://paperlense.vercel.app"}):
+    from backend.main import app
 
 REAL_GEMINI_CLIENT = gemini_client.genai.Client
 
@@ -80,5 +86,11 @@ def make_pdf():
 def client():
     documents.clear()
     with TestClient(app) as test_client:
+        def remember_session(response):
+            if response.request.url.path == "/api/upload" and response.status_code == 201:
+                response.read()
+                test_client.headers[SESSION_HEADER] = response.json()["session_id"]
+
+        test_client.event_hooks["response"].append(remember_session)
         yield test_client
     documents.clear()

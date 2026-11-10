@@ -2,13 +2,16 @@
 
 import asyncio
 import json
+import time
 
 import httpx
 import pytest
 
-from backend import gemini_client, main, summarization
+from backend import ai_providers, gemini_client, main, summarization
+from backend.ai_errors import ProviderError
 from backend.main import documents
 from backend.http_error_messages import provider_error_for_status
+from backend.openai_compatible_client import build_request_payload
 from backend.summarization import PaperSummary
 
 GROQ_MODEL = "openai/gpt-oss-120b"
@@ -234,6 +237,71 @@ def test_chat_retrieves_once_and_preserves_evidence_and_citations(client, make_p
         assert json.loads(next(message["content"] for message in body["messages"] if message["role"] == "user")) == original
 
 
+def test_groq_accepts_fenced_json_with_valid_citations(client, make_pdf, mock_providers):
+    calls = mock_providers(gemini=503, groq="```json\n" + json.dumps(ANSWER) + "\n```")
+    document_id = upload(client, make_pdf)
+    result = client.post(f"/api/documents/{document_id}/chat", json={"question": QUESTION})
+    assert result.status_code == 200
+    assert result.json()["model"] == GROQ_MODEL
+    assert result.json()["evidence"][0]["cited"] is True
+    assert [provider for provider, _ in calls] == ["gemini", "groq"]
+    body = json.loads(calls[1][1].content)
+    assert body["response_format"]["json_schema"]["strict"] is True
+    assert 'Copy N from that passage' in body["messages"][0]["content"]
+
+
+def test_groq_model_without_strict_support_uses_json_mode():
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    _, payload = build_request_payload("groq", "llama-3.1-8b-instant", "Rules", "Data", schema, 100)
+    assert payload["response_format"] == {"type": "json_object"}
+    assert json.dumps(schema, separators=(",", ":")) in payload["messages"][0]["content"]
+
+
+def test_fallback_does_not_start_when_cancellation_leaves_no_time(monkeypatch):
+    providers = [
+        ai_providers.ConfiguredProvider("gemini", "test-key", "model-a"),
+        ai_providers.ConfiguredProvider("openrouter", "test-key", "model-b"),
+    ]
+    monkeypatch.setattr(ai_providers, "find_configured_providers", lambda _: providers)
+    attempts = []
+
+    async def slow_attempt(provider, *_args):
+        attempts.append(provider.name)
+        try:
+            await asyncio.sleep(10)
+        finally:
+            # Simulate a transport that takes time to finish cancellation.
+            time.sleep(0.09)
+
+    monkeypatch.setattr(ai_providers, "ask_one_provider", slow_attempt)
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(ai_providers.generate_with_failover("summary", "", "", {}, str, timeout_seconds=0.12))
+    assert exc.value.status_code == 504
+    assert attempts == ["gemini"]
+
+
+def test_early_caps_leave_remaining_time_to_openrouter(monkeypatch):
+    names = ("gemini", "groq", "openrouter")
+    providers = [ai_providers.ConfiguredProvider(name, "test-key", "model-" + name) for name in names]
+    monkeypatch.setattr(ai_providers, "find_configured_providers", lambda _: providers)
+    budgets = {}
+
+    async def inspect_budget(provider, _instructions, _contents, _schema, _max_tokens, budget, _http_timeout):
+        budgets[provider.name] = budget
+        if provider.name != "openrouter":
+            raise provider_error_for_status(503)
+        raise TimeoutError
+
+    monkeypatch.setattr(ai_providers, "ask_one_provider", inspect_budget)
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(ai_providers.generate_with_failover("summary", "", "", {}, str))
+    assert exc.value.status_code == 504
+    assert tuple(budgets) == names
+    assert budgets["gemini"] == 20
+    assert budgets["groq"] == 15
+    assert 89 < budgets["openrouter"] <= 90
+
+
 def test_honest_no_evidence_response_does_not_fail_over(client, make_pdf, mock_providers):
     calls = mock_providers(gemini=NO_EVIDENCE)
     document_id = upload(client, make_pdf)
@@ -264,6 +332,7 @@ def test_in_flight_failover_summary_rejects_a_duplicate(make_pdf, mock_providers
         calls = mock_providers(gemini=503, groq=groq_response)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://test") as client:
             uploaded = await client.post("/api/upload", files={"file": ("paper.pdf", make_pdf(PAPER))})
+            client.headers[main.SESSION_HEADER] = uploaded.json()["session_id"]
             endpoint = f"/api/documents/{uploaded.json()['document_id']}/summary"
             pending = asyncio.create_task(client.post(endpoint))
             try:
