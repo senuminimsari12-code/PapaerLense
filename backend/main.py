@@ -37,7 +37,7 @@ from starlette.responses import JSONResponse
 
 from backend.ai_errors import ProviderError
 from backend.chat import (
-    ChatRequest, ChatResponse, INSUFFICIENT_ANSWER, chat_cache_key,
+    ChatRequest, ChatResponse, INSUFFICIENT_ANSWER, build_evidence, chat_cache_key,
     follow_up_context, generate_answer, remember_answer,
 )
 from backend.pdf_processing import MAX_UPLOAD_BYTES, PDFError, extract_pdf
@@ -521,6 +521,7 @@ async def chat_with_document(document_id: str, request: ChatRequest):
                 document_id=document_id,
                 answer=answer.answer,
                 sources=sources,
+                evidence=build_evidence(passages, answer.cited_chunk_ids),
                 insufficient_evidence=answer.insufficient_evidence,
                 model=model,
                 context_question=context_question,

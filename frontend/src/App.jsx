@@ -52,7 +52,8 @@ export { formatFileSize } from "./fileSize.js";
 // Only VITE_-prefixed variables are visible to frontend code. That is deliberate and
 // important: it is what keeps the API keys in .env out of the browser bundle.
 const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
+  import.meta.env.VITE_API_BASE_URL ||
+  (window.location.hostname === "localhost" ? `${window.location.protocol}//${window.location.hostname}:8000` : "")
 ).replace(/\/$/, "");
 
 // 20 MiB, matching the backend's limit. Checking here too means an oversized file is
@@ -360,51 +361,57 @@ function Workspace({ preferences }) {
       <SiteHeader preferences={preferences} />
 
       <main id="main" tabIndex={-1}>
-        <IntroSection />
+        {!uploadedDocument && <IntroSection />}
 
-        <div className="workspace-grid">
-          <UploadCard
-            selectedFile={selectedFile}
+        <div className="research-workspace">
+          <div className={`workspace-grid ${uploadedDocument ? "has-paper" : ""}`}>
+            <UploadCard
+              selectedFile={selectedFile}
+              document={uploadedDocument}
+              isUploading={isUploading}
+              isDragging={isDragging}
+              error={error}
+              fileInputRef={fileInputRef}
+              onFilesSelected={uploadFiles}
+              onDraggingChange={setIsDragging}
+            />
+            <DocumentPreview
+              document={uploadedDocument}
+              isUploading={isUploading}
+              file={selectedFile}
+              citationPage={citationPage}
+            />
+          </div>
+
+          <div className="reading-column">
+          <SummaryCard
+            document={uploadedDocument}
+            summary={summary}
+            summaryError={summaryError}
+            isSummarizing={isSummarizing}
+            isUploading={isUploading}
+            onGenerateSummary={() => generateSummary(uploadedDocument)}
+          />
+
+          {/*
+            The `key` is the important part here. When the key changes React throws the
+            old ChatPanel away and builds a fresh one, which clears the entire question
+            history. That is how uploading a new PDF discards the old conversation, with
+            no clean-up code of our own.
+          */}
+          <ChatPanel
+            key={uploadedDocument?.document_id || "no-document"}
             document={uploadedDocument}
             isUploading={isUploading}
-            isDragging={isDragging}
-            error={error}
-            fileInputRef={fileInputRef}
-            onFilesSelected={uploadFiles}
-            onDraggingChange={setIsDragging}
+            apiBaseUrl={API_BASE_URL}
+            onOpenCitation={openCitationPage}
+            language={preferences.language}
           />
-          <DocumentPreview
-            document={uploadedDocument}
-            isUploading={isUploading}
-            file={selectedFile}
-            citationPage={citationPage}
-          />
+
+          </div>
         </div>
 
-        <SummaryCard
-          document={uploadedDocument}
-          summary={summary}
-          summaryError={summaryError}
-          isSummarizing={isSummarizing}
-          isUploading={isUploading}
-          onGenerateSummary={() => generateSummary(uploadedDocument)}
-        />
-
-        {/*
-          The `key` is the important part here. When the key changes React throws the
-          old ChatPanel away and builds a fresh one, which clears the entire question
-          history. That is how uploading a new PDF discards the old conversation, with
-          no clean-up code of our own.
-        */}
-        <ChatPanel
-          key={uploadedDocument?.document_id || "no-document"}
-          document={uploadedDocument}
-          isUploading={isUploading}
-          apiBaseUrl={API_BASE_URL}
-          onOpenCitation={openCitationPage}
-        />
-
-        <FeatureListSection />
+        {!uploadedDocument && <FeatureListSection />}
         <HowItWorksSection />
       </main>
 

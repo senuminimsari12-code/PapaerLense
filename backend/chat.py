@@ -72,12 +72,19 @@ class SourcePassage(BaseModel):
     excerpt: str
 
 
+class EvidencePassage(SourcePassage):
+    """A retrieved passage and whether the answer cited it."""
+
+    cited: bool
+
+
 class ChatResponse(BaseModel):
     """What the API returns for one question."""
 
     document_id: str
     answer: str
     sources: list[SourcePassage]
+    evidence: list[EvidencePassage] = Field(default_factory=list)
     insufficient_evidence: bool
     model: str | None
     context_question: str | None = None
@@ -273,6 +280,32 @@ def build_source_passages(cited_chunk_ids: list[str], passages_by_id: dict) -> l
             excerpt=passage["text"],
         ))
     return sources
+
+
+def build_evidence(passages: list[dict], cited_chunk_ids: list[str]) -> list[EvidencePassage]:
+    """Turn the passages we sent the AI into the list the Evidence Explorer displays.
+
+    Input:  passages        - the retrieved chunks that were actually sent, best first.
+            cited_chunk_ids - the passage IDs the finished answer cited.
+    Output: one EvidencePassage per sent passage, in the same order they were sent.
+
+    This re-uses the retrieval result the answer was generated from. It does no searching
+    of its own and calls no AI provider, so the user always sees the same passages the
+    model saw. An empty `passages` list gives an empty evidence list, which is how "no
+    relevant passages were found" stays honest instead of inventing something to show.
+    """
+    cited_ids = set(cited_chunk_ids)
+    evidence = []
+
+    for passage in passages:
+        evidence.append(EvidencePassage(
+            chunk_id=passage["chunk_id"],
+            page_number=passage["page_number"],
+            excerpt=passage["text"],
+            cited=passage["chunk_id"] in cited_ids,
+        ))
+
+    return evidence
 
 
 def parse_grounded_answer(text: str, passages: list[dict]) -> tuple[GroundedAnswer, list[SourcePassage]]:

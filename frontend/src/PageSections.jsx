@@ -28,8 +28,6 @@ export function SiteHeader({ preferences }) {
       <div className="header-right">
         <a href="#how-it-works">{t("How it works")}{" "}<span aria-hidden="true">↗</span>
         </a>
-        <span className="phase-badge">{t("PHASE 03")}{" "}<span>{t("Paper Q&A")}</span>
-        </span>
         <PreferenceControls {...preferences} />
       </div>
     </header>
@@ -40,10 +38,9 @@ export function IntroSection() {
   const t = useTranslation();
   return (
     <section className="intro" aria-labelledby="page-title">
-      <p className="eyebrow"><span className="tiny-line" />{" "}{t("A LITTLE CLARITY FOR BIG IDEAS")}</p>
-      <h1 id="page-title">{t("Your research,")}<br className="mobile-break" /> <span>{t("in focus.")}</span></h1>
+      <h1 id="page-title">{t("Research paper workspace")}</h1>
       <p className="intro-copy">
-        {t("Every great insight starts with a paper. Bring yours into a calm, focused workspace and explore what’s inside.")}
+        {t("Upload a research PDF to read its summary, ask questions, and open cited pages.")}
       </p>
       <div className="local-note">
         <Icon name="shield" size={16} />{" "}{t("PDF extraction stays local")}{" "}
@@ -128,8 +125,7 @@ export function SiteFooter() {
       <span className="footer-brand">
         PaperLense<span>.</span>
       </span>
-      <p>{t("Built for curious minds. Designed for focus.")}</p>
-      <span>{t("Phase 3 · Grounded research Q&A")}</span>
+      <p>{t("Research paper workspace")}</p>
     </footer>
   );
 }

@@ -1,5 +1,7 @@
 // English UI copy is also the lookup key. Interpolated values stay in their source language.
 const entries = [
+  ["Research paper workspace","පර්යේෂණ ලිපි වැඩබිම","ஆய்வுக் கட்டுரைப் பணியிடம்"],
+  ["Upload a research PDF to read its summary, ask questions, and open cited pages.","සාරාංශය කියවීමට, ප්‍රශ්න ඇසීමට සහ යොමු කළ පිටු විවෘත කිරීමට පර්යේෂණ PDF ගොනුවක් උඩුගත කරන්න.","சுருக்கத்தைப் படிக்கவும், கேள்விகள் கேட்கவும், மேற்கோள் பக்கங்களைத் திறக்கவும் ஆய்வு PDF கோப்பைப் பதிவேற்றுங்கள்."],
   ["Selected page {page} of {total}", "තෝරාගත් පිටුව {page} / {total}", "தேர்ந்தெடுத்த பக்கம் {page} / {total}"],
   ["Original PDF page {page}", "මුල් PDF ගොනුවේ {page} වැනි පිටුව", "அசல் PDF கோப்பின் பக்கம் {page}"],
   ["Loading PDF page…", "PDF පිටුව පූරණය වෙමින්…", "PDF பக்கம் ஏற்றப்படுகிறது…"],
