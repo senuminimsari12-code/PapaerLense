@@ -7,7 +7,9 @@
 //
 // It renders one of two things: the document, or an empty placeholder.
 
+import { useEffect, useRef } from "react";
 import Icon from "./Icon.jsx";
+import CitedPdfPage from "./CitedPdfPage.jsx";
 import { useTranslation } from "./interfacePreferences.jsx";
 
 function EmptyPreview({ isUploading }) {
@@ -49,10 +51,19 @@ function EmptyPreview({ isUploading }) {
   );
 }
 
-export default function DocumentPreview({ document, isUploading }) {
+export default function DocumentPreview({ document, isUploading, file, citationPage }) {
   const t = useTranslation();
+  const pageHeading = useRef(null);
+
+  useEffect(() => {
+    if (citationPage && pageHeading.current) {
+      pageHeading.current.focus({ preventScroll: true });
+      pageHeading.current.scrollIntoView?.({ block: "start" });
+    }
+  }, [citationPage]);
+
   return (
-    <section className="card preview-card" aria-labelledby="preview-title">
+    <section className="card preview-card" id="document-preview" aria-labelledby="preview-title">
       <div className="preview-heading">
         <div>
           <p className="card-eyebrow">{t("02 / TAKE A CLOSER LOOK")}</p>
@@ -80,6 +91,14 @@ export default function DocumentPreview({ document, isUploading }) {
               <dd>PDF</dd>
             </div>
           </dl>
+          {citationPage && (
+            <section className="cited-pdf-page" aria-labelledby="cited-page-title">
+              <h3 id="cited-page-title" ref={pageHeading} tabIndex={-1}>
+                {t("Selected page {page} of {total}", { page: citationPage.page, total: document.page_count })}
+              </h3>
+              <CitedPdfPage key={document.document_id} file={file} page={citationPage.page} />
+            </section>
+          )}
           <div className="text-preview-heading">
             <span>
               <Icon name="text" size={16} />{" "}{t("EXTRACTED TEXT")}</span>

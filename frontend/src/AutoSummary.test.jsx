@@ -177,7 +177,8 @@ it.each(["success", "failure"])("Q&A works during and after an automatic summary
   expect(input.disabled).toBe(false);
   fireEvent.change(input, { target: { value: "What accuracy was measured?" } });
   fireEvent.click(screen.getByRole("button", { name: "Send question" }));
-  await screen.findByText(answer.answer);
+  await screen.findByText((_content, node) =>
+    node.matches("p.message-text") && node.textContent === answer.answer);
   expect(screen.getByRole("button", { name: "Generating summary…" }).disabled).toBe(true);
   await act(async () => pending.resolve(outcome === "success" ? ok(summary) : failure("Summary unavailable.")));
   if (outcome === "success") await screen.findByText(summary.summary.key_results);

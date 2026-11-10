@@ -1,5 +1,10 @@
 // English UI copy is also the lookup key. Interpolated values stay in their source language.
 const entries = [
+  ["Selected page {page} of {total}", "තෝරාගත් පිටුව {page} / {total}", "தேர்ந்தெடுத்த பக்கம் {page} / {total}"],
+  ["Original PDF page {page}", "මුල් PDF ගොනුවේ {page} වැනි පිටුව", "அசல் PDF கோப்பின் பக்கம் {page}"],
+  ["Loading PDF page…", "PDF පිටුව පූරණය වෙමින්…", "PDF பக்கம் ஏற்றப்படுகிறது…"],
+  ["The original PDF could not be opened in this browser.", "මුල් PDF ගොනුව මෙම බ්‍රවුසරයෙන් විවෘත කළ නොහැකි විය.", "அசல் PDF கோப்பை இந்த உலாவியில் திறக்க முடியவில்லை."],
+  ["This PDF page could not be displayed.", "මෙම PDF පිටුව පෙන්විය නොහැකි විය.", "இந்த PDF பக்கத்தைக் காட்ட முடியவில்லை."],
   ["PHASE 03","අදියර 03","கட்டம் 03"],
   ["Paper Q&A","ලිපිය පිළිබඳ ප්‍රශ්න හා පිළිතුරු","கட்டுரை வினா–விடை"],
   ["Phase 3 · Grounded research Q&A","අදියර 3 · සාක්ෂි මත පදනම් වූ ප්‍රශ්න හා පිළිතුරු","கட்டம் 3 · ஆதாரத்தின் அடிப்படையிலான ஆய்வு வினா–விடை"],

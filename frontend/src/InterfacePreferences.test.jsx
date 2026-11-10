@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import App from "./App.jsx";
 
+// Citation buttons split the text into nodes; compare the whole answer paragraph.
+const answerParagraph = (text) => (_content, node) =>
+  node.matches("p.message-text") && node.textContent === text;
+
 const storageKey = "paperlense-interface";
 const root = document.documentElement;
 
@@ -109,7 +113,7 @@ describe("Interface preferences", () => {
     select("Language", "ta");
     expect(screen.getByRole("textbox", { name: "உங்கள் கேள்வி" }).value).toBe(question);
     fireEvent.submit(screen.getByRole("textbox", { name: "உங்கள் கேள்வி" }).form);
-    await screen.findByText(answer);
+    await screen.findByText(answerParagraph(answer));
     expect(fetch.mock.calls[1][0]).toMatch(/\/documents\/study\/summary$/);
     expect(fetch.mock.calls[2][0]).toMatch(/\/documents\/study\/chat$/);
     expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ question });
@@ -123,7 +127,7 @@ describe("Interface preferences", () => {
       expect(screen.getByText("Original " + section)).toBeTruthy();
     }
     expect(screen.getByText(question)).toBeTruthy();
-    expect(screen.getByText(answer)).toBeTruthy();
+    expect(screen.getByText(answerParagraph(answer))).toBeTruthy();
     expect(screen.getByText(excerpt)).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(JSON.parse(localStorage.getItem(storageKey))).toEqual({

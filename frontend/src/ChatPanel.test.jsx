@@ -2,6 +2,13 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import App from "./App.jsx";
+import { openPdf } from "./pdfRenderer.js";
+
+vi.mock("./pdfRenderer.js", () => ({ openPdf: vi.fn() }));
+
+// Citation buttons split the text into nodes; compare the whole answer paragraph.
+const answerParagraph = (text) => (_content, node) =>
+  node.matches("p.message-text") && node.textContent === text;
 
 const uploaded = {
   document_id: "paper-one", filename: "first.pdf", page_count: 3,
@@ -18,8 +25,10 @@ const ok = (data) => ({ ok: true, json: async () => data });
 const failure = (detail) => ({ ok: false, json: async () => ({ detail }) });
 
 function choose(name = "first.pdf") {
+  const file = new File(["pdf bytes"], name, { type: "application/pdf" });
+  file.arrayBuffer = async () => new ArrayBuffer(8);
   fireEvent.change(screen.getByLabelText("Choose a research paper PDF"), {
-    target: { files: [new File(["pdf bytes"], name, { type: "application/pdf" })] },
+    target: { files: [file] },
   });
 }
 
@@ -56,6 +65,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 describe("Grounded paper Q&A", () => {
@@ -76,7 +86,7 @@ describe("Grounded paper Q&A", () => {
     await openPaper();
     fetch.mockResolvedValueOnce(ok(answer));
     send("  " + question + "  ");
-    await screen.findByText(answer.answer);
+    await screen.findByText(answerParagraph(answer.answer));
     expect(screen.getByText(question)).toBeTruthy();
     const [url, options] = fetch.mock.calls[2];
     expect(url).toBe("http://localhost:8000/api/documents/paper-one/chat");
@@ -103,7 +113,7 @@ describe("Grounded paper Q&A", () => {
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(fetch).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(input, { key: "Enter" });
-    await screen.findByText(answer.answer);
+    await screen.findByText(answerParagraph(answer.answer));
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
@@ -134,7 +144,7 @@ describe("Grounded paper Q&A", () => {
     fireEvent.submit(input.closest("form"));
     expect(fetch).toHaveBeenCalledTimes(3);
     await act(async () => pending.resolve(ok(answer)));
-    expect(screen.getByText(answer.answer)).toBeTruthy();
+    expect(screen.getByText(answerParagraph(answer.answer))).toBeTruthy();
     expect(input.readOnly).toBe(false);
     expect(document.activeElement).toBe(input);
   });
@@ -144,10 +154,10 @@ describe("Grounded paper Q&A", () => {
     fetch.mockResolvedValueOnce(failure("The AI provider is temporarily unavailable."));
     send();
     await screen.findByText("The AI provider is temporarily unavailable.");
-    expect(screen.queryByText(answer.answer)).toBeNull();
+    expect(screen.queryByText(answerParagraph(answer.answer))).toBeNull();
     fetch.mockResolvedValueOnce(ok(answer));
     fireEvent.click(screen.getByRole("button", { name: "Retry answer" }));
-    await screen.findByText(answer.answer);
+    await screen.findByText(answerParagraph(answer.answer));
     expect(fetch.mock.calls[3][1].body).toBe(fetch.mock.calls[2][1].body);
     expect(screen.getAllByText(question)).toHaveLength(1);
   });
@@ -188,6 +198,7 @@ describe("Grounded paper Q&A", () => {
     send();
     await screen.findByText(/server returned an invalid answer/);
     expect(screen.getByRole("button", { name: "Retry answer" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^\[Page / })).toBeNull();
   });
 
   it("displays a multi-paragraph answer when each paragraph cites a source", async () => {
@@ -229,9 +240,9 @@ describe("Grounded paper Q&A", () => {
     await openPaper();
     fetch.mockResolvedValueOnce(ok(answer));
     send();
-    await screen.findByText(answer.answer);
+    await screen.findByText(answerParagraph(answer.answer));
     choose("invalid.txt");
-    expect(screen.queryByText(answer.answer)).toBeNull();
+    expect(screen.queryByText(answerParagraph(answer.answer))).toBeNull();
     expect(screen.queryByText(question)).toBeNull();
     expect(screen.getByRole("textbox", { name: "Your question" }).disabled).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(3);
@@ -254,11 +265,11 @@ describe("Grounded paper Q&A", () => {
       if (rejectOld) old.reject(new TypeError("Old request failed"));
       else old.resolve(ok(answer));
     });
-    expect(screen.queryByText(answer.answer)).toBeNull();
+    expect(screen.queryByText(answerParagraph(answer.answer))).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Preparing answer…" }).disabled).toBe(true);
     await act(async () => current.resolve(ok({ ...answer, document_id: "paper-two" })));
-    expect(screen.getByText(answer.answer)).toBeTruthy();
+    expect(screen.getByText(answerParagraph(answer.answer))).toBeTruthy();
     expect(screen.getByText("Page 1 Replacement preview")).toBeTruthy();
   });
 
@@ -267,7 +278,7 @@ describe("Grounded paper Q&A", () => {
     for (let number = 0; number < 14; number += 1) {
       fetch.mockResolvedValueOnce(ok({ ...answer, answer: `Answer number ${number}. [Page 2]` }));
       send(`Question number ${number}`);
-      await screen.findByText(`Answer number ${number}. [Page 2]`);
+      await screen.findByText(answerParagraph(`Answer number ${number}. [Page 2]`));
     }
     const history = screen.getByRole("list", { name: "Conversation about the current paper" });
     expect(history.children).toHaveLength(12);
@@ -303,7 +314,7 @@ describe("Prose page numbers alongside a valid citation", () => {
     await openPaper();
     fetch.mockResolvedValueOnce(ok({ ...answer, answer: answerText }));
     send();
-    await screen.findByText(answerText);
+    await screen.findByText(answerParagraph(answerText));
     expect(screen.queryByText(/server returned an invalid answer/)).toBeNull();
     expect(screen.getByText("Supporting passages (1)")).toBeTruthy();
   });
@@ -320,7 +331,7 @@ describe("Prose page numbers alongside a valid citation", () => {
       ],
     }));
     send();
-    await screen.findByText(answerText);
+    await screen.findByText(answerParagraph(answerText));
     expect(screen.getByText("Supporting passages (2)")).toBeTruthy();
   });
 
@@ -338,7 +349,7 @@ describe("Prose page numbers alongside a valid citation", () => {
     fetch.mockResolvedValueOnce(ok({ ...answer, answer: answerText }));
     send();
     await screen.findByText(/server returned an invalid answer/);
-    expect(screen.queryByText(answerText)).toBeNull();
+    expect(screen.queryByText(answerParagraph(answerText))).toBeNull();
   });
 
   it("still rejects a cited page that is not among the returned sources", async () => {
@@ -349,5 +360,106 @@ describe("Prose page numbers alongside a valid citation", () => {
     }));
     send();
     await screen.findByText(/server returned an invalid answer/);
+  });
+});
+
+describe("Citation navigation", () => {
+  function mockPdf() {
+    const renderPage = vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() }));
+    const getPage = vi.fn(async () => ({
+      render: renderPage,
+      getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
+    }));
+    const destroy = vi.fn(async () => {});
+    openPdf.mockReset().mockReturnValue({ promise: Promise.resolve({ getPage }), destroy });
+    return { getPage, renderPage, destroy };
+  }
+
+  it.each(["light", "dark"])("opens real page numbers from multiple answers in %s mode", async (theme) => {
+    localStorage.setItem("paperlense-interface", JSON.stringify({ theme, language: "en", size: "large" }));
+    const { getPage, destroy } = mockPdf();
+    fetch.mockResolvedValueOnce(ok({ ...uploaded, page_count: 6 }));
+    await openPaper();
+    fetch.mockResolvedValueOnce(ok({
+      ...answer,
+      answer: "The study measured 42 samples. [Page 6] The aim appears on page 1. [Page 1]",
+      sources: [
+        { ...answer.sources[0], page_number: 6 },
+        { chunk_id: "intro", page_number: 1, excerpt: "The study's aim." },
+      ],
+    }));
+    send();
+    const pageSix = await screen.findByRole("button", { name: "[Page 6]" });
+    expect(screen.getAllByRole("button", { name: /^\[Page / })).toHaveLength(2);
+    expect(pageSix.parentElement.textContent).toContain("The study measured 42 samples.");
+    fireEvent.click(pageSix);
+    const heading = screen.getByRole("heading", { name: "Selected page 6 of 6" });
+    expect(document.activeElement).toBe(heading);
+    await screen.findByRole("img", { name: "Original PDF page 6" });
+    expect(getPage).toHaveBeenLastCalledWith(6);
+
+    pageSix.focus();
+    fireEvent.click(pageSix);
+    expect(document.activeElement).toBe(heading);
+    expect(openPdf).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "[Page 1]" }));
+    await screen.findByRole("img", { name: "Original PDF page 1" });
+    expect(getPage).toHaveBeenLastCalledWith(1);
+
+    fetch.mockResolvedValueOnce(ok(answer));
+    send("What else did the classifier report?");
+    fireEvent.click(await screen.findByRole("button", { name: "[Page 2]" }));
+    await screen.findByRole("img", { name: "Original PDF page 2" });
+    expect(getPage).toHaveBeenLastCalledWith(2);
+    expect(document.documentElement.dataset.theme).toBe(theme);
+    expect(document.documentElement.dataset.textSize).toBe("large");
+
+    fetch.mockResolvedValueOnce(ok({ ...uploaded, document_id: "new-paper", preview: "Replacement PDF" }));
+    choose("new.pdf");
+    await screen.findByText("Replacement PDF");
+    fireEvent.click(pageSix);
+    expect(screen.queryByRole("button", { name: "[Page 6]" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Selected page/ })).toBeNull();
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(getPage).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["open", "render"])("reports a PDF %s failure without removing extracted text", async (failure) => {
+    const { renderPage } = mockPdf();
+    if (failure === "open") openPdf.mockImplementationOnce(() => ({
+      promise: Promise.reject(new Error("invalid PDF")), destroy: vi.fn(async () => {}),
+    }));
+    else renderPage.mockImplementationOnce(() => ({
+      promise: Promise.reject(new Error("render failure")), cancel: vi.fn(),
+    }));
+    fetch.mockResolvedValueOnce(ok({ ...uploaded, page_count: 1 }));
+    await openPaper();
+    fetch.mockResolvedValueOnce(ok({
+      ...answer, answer: "This PDF has one page. [Page 1]",
+      sources: [{ ...answer.sources[0], page_number: 1 }],
+    }));
+    send();
+    fireEvent.click(await screen.findByRole("button", { name: "[Page 1]" }));
+    expect(screen.getByRole("heading", { name: "Selected page 1 of 1" })).toBeTruthy();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not be (opened|displayed)/);
+    expect(screen.getByText("Page 2 Classifier research preview")).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Original PDF page 1" })).toBeNull();
+  });
+
+  it("opens the supporting passage's page in a one-page PDF", async () => {
+    const { getPage } = mockPdf();
+    fetch.mockResolvedValueOnce(ok({ ...uploaded, page_count: 1 }));
+    await openPaper();
+    fetch.mockResolvedValueOnce(ok({
+      ...answer, answer: "The study reports 93 percent accuracy. [Page 1]",
+      sources: [{ ...answer.sources[0], page_number: 1 }],
+    }));
+    send();
+    fireEvent.click(await screen.findByText("Supporting passages (1)"));
+    fireEvent.click(screen.getByRole("button", { name: "Page 1", exact: true }));
+    await screen.findByRole("img", { name: "Original PDF page 1" });
+    expect(getPage).toHaveBeenCalledExactlyOnceWith(1);
   });
 });
